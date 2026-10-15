@@ -1,0 +1,15 @@
+# Core (CPU) — everything needed for numpy/numba backends, interp, formats, metrics, hald:
+numpy
+scipy
+numba
+scikit-image
+
+# GPU backends (backend='gpu' grid_sample, backend='fused' fused HIP kernel):
+#   1. a ROCm or CUDA build of torch  (e.g. torch 2.x +rocm)
+#   2. the `robust_hald` package on the path  (provides grid_sample + the fused kernel)
+#   3. for the fused kernel only: a compiler + ROCm dev libs (hipcc, hipsparse,
+#      hipblas, hipsolver, hipfft, hiprand, thrust) — see README "GPU / fused kernel".
+# torch is NOT installed by this file because it is platform/build specific.
+
+# Used by lutlab.selftest / docs:
+# matplotlib  (optional, only for plotting)

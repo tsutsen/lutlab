@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lutlab"
+version = "0.1.0"
+description = "A small LUT (3D lookup table) library: load, apply, interpolate, measure, and extract colour LUTs."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "tsutsen", email = "harlov.leonid@ya.ru" }]
+dependencies = [
+  "numpy",
+  "scipy",
+  "numba",
+  "scikit-image",
+]
+
+# GPU backends (backend='gpu' / 'fused') need an ROCm/CUDA torch build plus the
+# `robust_hald` package on the path (grid_sample + fused HIP kernel). CPU backends
+# (numpy, numba) need nothing extra.
+[project.optional-dependencies]
+gpu = ["torch"]
+
+[project.scripts]
+lutlab = "lutlab.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lutlab"]

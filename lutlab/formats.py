@@ -1,0 +1,157 @@
+"""LUT format conversion: .cube, compact JSON, resampling, and validation.
+
+`.cube` is the de-facto 3D-LUT interchange format (Resolve, Premiere, OBS, ...).
+It only has a single `DataSize`, so it is a 3D format -- 2D/4D LUTs use the
+compact JSON instead. Both round-trip through the canonical `(D,)*n + (3,)`
+layout, R on axis 0.
+"""
+from __future__ import annotations
+
+import base64
+import json
+
+import numpy as np
+
+from . import interp as _interp
+from .lut import LUT, identity
+
+__all__ = ["to_cube", "from_cube", "to_json", "from_json",
+           "resample", "validate"]
+
+
+def _vol(x: LUT | np.ndarray) -> np.ndarray:
+    return getattr(x, "vol", x)
+
+
+def _name(x: LUT | np.ndarray, default: str = "lut") -> str:
+    return getattr(x, "name", None) or default
+
+
+def to_cube(lut: LUT | np.ndarray, path: str | None = None,
+            title: str | None = None) -> str:
+    """Write (or return) the `.cube` text for a 3D LUT.
+
+    `.cube` row order is R-fastest: `for b: for g: for r`. Returns the string;
+    also writes to `path` if given.
+
+    .. note::
+       `.cube` writes each value with 6 decimal places, so a round-trip is
+       accurate to ~1e-6, **not exact**. For a lossless round-trip (and for
+       2D/4D LUTs, which `.cube` cannot hold) use :func:`to_json`.
+    """
+    vol = np.asarray(_vol(lut), np.float32)
+    if vol.ndim - 1 != 3:
+        raise ValueError(".cube is a 3D format; use to_json for 2D/4D LUTs")
+    d = vol.shape[0]
+    t = title or _name(lut)
+    lines = [f"Title: {t}", "DomainMin: 0 0 0", "DomainMax: 1 1 1",
+             f"DataSize: {d}", "LUT_3D:"]
+    for b in range(d):
+        for g in range(d):
+            for r in range(d):
+                v = vol[r, g, b]
+                lines.append(f"{v[0]:.6f} {v[1]:.6f} {v[2]:.6f}")
+    s = "\n".join(lines) + "\n"
+    if path:
+        with open(path, "w") as f:
+            f.write(s)
+    return s
+
+
+def from_cube(path: str) -> tuple[np.ndarray, str]:
+    """Parse a `.cube` file -> (vol, title). vol is (D,D,D,3), R on axis 0."""
+    d = None
+    vals = []
+    title = None
+    with open(path) as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            low = line.lower()
+            if low.startswith("title:"):
+                title = line.split(":", 1)[1].strip()
+            elif low.startswith("datasize:"):
+                d = int(line.split(":", 1)[1].strip())
+            elif low.startswith(("lut_3d", "domainmin", "domainmax")):
+                continue
+            else:
+                p = line.split()
+                if len(p) >= 3:
+                    vals.append([float(q) for q in p[:3]])
+    if d is None:
+        d = int(round(len(vals) ** (1 / 3)))
+    vol = np.zeros((d, d, d, 3), np.float32)
+    k = 0
+    for b in range(d):
+        for g in range(d):
+            for r in range(d):
+                vol[r, g, b] = vals[k]
+                k += 1
+    return vol, (title or "cube")
+
+
+def to_json(lut: LUT | np.ndarray, path: str | None = None) -> str:
+    """Compact round-trip: base64 float32 grid. Works for any dimensionality."""
+    vol = np.asarray(_vol(lut), np.float32)
+    obj = {"format": "lutlab v1", "name": _name(lut),
+           "ndim": vol.ndim - 1, "D": vol.shape[0],
+           "data": base64.b64encode(np.ascontiguousarray(vol).tobytes()).decode()}
+    s = json.dumps(obj)
+    if path:
+        with open(path, "w") as f:
+            f.write(s)
+    return s
+
+
+def from_json(path: str) -> tuple[np.ndarray, str]:
+    obj = json.load(open(path))
+    vol = np.frombuffer(base64.b64decode(obj["data"]), dtype=np.float32)
+    vol = vol.reshape((obj["D"],) * obj["ndim"] + (3,))
+    return vol, obj.get("name", "lut")
+
+
+def resample(lut: LUT | np.ndarray, D: int, name: str | None = None) -> LUT:
+    """Resample a LUT to a new grid size D by trilinear interpolation.
+
+    This is just "apply the source LUT (as a trilinear LUT) to the identity
+    grid at resolution D" -- no manual corner bookkeeping, so it is exactly as
+    good as the trilinear interpolant. 33 -> 17 for applying a 33^3 LUT cheaply.
+    """
+    vol = np.asarray(_vol(lut), np.float32)
+    n = vol.ndim - 1
+    g = np.stack(np.meshgrid(*[np.linspace(0, 1, D)] * n, indexing="ij"),
+                 axis=-1).astype(np.float32).reshape(-1, n)
+    out = _interp.interp(vol, g, mode="multilinear").reshape((D,) * n + (3,))
+    return LUT(out, name=name or _name(lut))
+
+
+def validate(lut: LUT | np.ndarray, n: int = 400, seed: int = 0) -> dict[str, float | str]:
+    """How much do the apply backends disagree? Max abs diff vs the numpy oracle.
+
+    Returns {backend: max_diff}. Anything above ~1e-4 on a well-formed LUT is a
+    bug (usually an axis-order mix-up). The gpu path is checked only if a device
+    is available and the LUT is 3D.
+    """
+    rng = np.random.RandomState(seed)
+    vol = np.asarray(_vol(lut), np.float32)
+    xa = rng.rand(n, vol.ndim - 1).astype(np.float32)
+    ref = _interp.interp(vol, xa, "multilinear", engine="numpy")
+    res = {"numpy": 0.0}
+    if _interp._HAS_NUMBA:
+        res["numba"] = float(np.abs(
+            _interp.interp(vol, xa, "multilinear", engine="numba") - ref).max())
+    if vol.ndim - 1 == 3:
+        try:
+            import torch
+            from robust_hald.gpu_apply import lut_apply_gpu
+            if torch.cuda.is_available():
+                I = torch.from_numpy(xa).reshape(1, -1, 3).cuda()
+                V = torch.from_numpy(np.ascontiguousarray(vol)).cuda()
+                res["gpu"] = float(np.abs(
+                    lut_apply_gpu(I, V).cpu().numpy().reshape(n, 3) - ref).max())
+            else:
+                res["gpu"] = "no device"
+        except Exception as e:                      # pragma: no cover
+            res["gpu"] = f"unavailable: {e.__class__.__name__}"
+    return res
