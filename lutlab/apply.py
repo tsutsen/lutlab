@@ -54,7 +54,11 @@ def _is_cuda(x) -> bool:
 
 
 def _to_cuda(x):
-    """numpy array or torch tensor -> CUDA float32 tensor (no copy if present)."""
+    """numpy array or torch tensor -> GPU float32 tensor (no copy if present).
+
+    (The name refers to the device, not a vendor: on this machine it is a
+    ROCm/GPU tensor, moved with torch's ``.cuda()`` which is also the ROCm API.)
+    """
     import torch
     if torch.is_tensor(x):
         return x.float().contiguous().cuda() if not x.is_cuda else x.float().contiguous()
@@ -62,7 +66,7 @@ def _to_cuda(x):
 
 
 def _apply_gs(v: np.ndarray, img):
-    """Trilinear 3D via grid_sample. CUDA-in -> CUDA tensor out (no round-trip)."""
+    """Trilinear 3D via grid_sample. GPU-in -> GPU tensor out (no round-trip)."""
     import torch
     from robust_hald.gpu_apply import lut_apply_gpu
     orig = tuple(img.shape)
@@ -89,9 +93,9 @@ def apply(lut: LUT | np.ndarray, img: np.ndarray | "torch.Tensor",
           interp: str = "multilinear", backend: str = "auto"):
     """Apply `lut` to `img`. `img` is (..., n) in [0,1], n = lut.ndim.
 
-    `img` may be a numpy array or a CUDA tensor; a CUDA tensor is used in place
-    (no CPU round-trip) and a CUDA tensor is returned. Returns a numpy array for
-    numpy input.
+    `img` may be a numpy array or a GPU (CUDA/ROCm) tensor; a GPU tensor is used
+    in place (no CPU round-trip) and a GPU tensor is returned. Returns a numpy
+    array for numpy input.
 
     backend: 'auto' (grid_sample GPU when it applies, else fastest CPU), 'gpu'
     (grid_sample), 'fused' (fused HIP kernel, fastest, needs ROCm dev packages),

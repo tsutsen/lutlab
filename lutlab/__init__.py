@@ -25,10 +25,20 @@ import sys
 
 # Make the sibling packages importable without touching them. `robust_hald`
 # (the regular package) lives one level down, `xlut` in Experiments/.
-_here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # Experiments/
-for _p in (os.path.join(_here, "robust_hald"), _here):
-    if _p not in sys.path:
+_here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # lutlab repo root
+# robust_hald is a thin dependency (extract/hald/segmented re-export it). Locate it
+# via env var, a sibling copy, or the known in-repo path -- so `import lutlab` works
+# whether lutlab lives next to Experiments/ or standalone.
+_robust = [
+    os.environ.get("ROBUST_HALD_DIR"),
+    os.path.join(_here, "robust_hald"),
+    "/home/leon/Projects/PhD/Experiments/robust_hald",
+]
+for _p in _robust:
+    if _p and _p not in sys.path:
         sys.path.insert(0, _p)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
 
 from .lut import LUT, identity
 from .apply import apply, segmented_apply, backends

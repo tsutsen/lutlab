@@ -1,0 +1,25 @@
+# Citation for the lutlab library.
+# See https://citation-file-format.github.io/
+cff-version: 1.2.0
+message: "If you use lutlab in your work, please cite it using this file."
+title: "lutlab: a Python library for building, applying and analysing 3D colour lookup tables"
+type: software
+authors:
+  - family-names: Harlov
+    given-names: Leon
+    email: harlov.leonid@ya.ru
+url: "https://github.com/tsutsen/lutlab"
+license: MIT
+version: 0.1.0
+date-released: "2025-01-01"
+related-project:
+  - title: "lutlab-paper: reproducing the measurements behind the lutlab software paper"
+    url: "https://github.com/tsutsen/lutlab-paper"
+keywords:
+  - "colour lookup tables"
+  - "3D-LUT"
+  - "colour grading"
+  - "image processing"
+  - "Hald CLUT"
+  - "GPU"
+  - "ROCm"
