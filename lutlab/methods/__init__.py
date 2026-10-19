@@ -1,12 +1,12 @@
-"""Methods: things that *produce* a `ColorTransform` from data.
+"""Methods: things that *produce* a `transform` from data.
 
-A method is a function ``build(**cfg) -> ColorTransform`` registered under a
-name. Per-image methods (extraction from a Hald render, segmented fits) and
-trained global methods (NILUT, 4D LUT, AdaInt, ...) all fit this shape, so the
+A method is a function ``build(**cfg) -> transform`` registered under a
+name. Per-image and trained global methods (NILUT, 4D LUT, AdaInt, ...) all fit
+this shape, so the
 evaluation harness and the conformance tests treat them uniformly::
 
     @methods.register("my_method", requires=("torch",))
-    def build(*, image=None, target=None, **cfg) -> ColorTransform: ...
+    def build(*, image=None, target=None, **cfg) -> transform: ...
 
     t = methods.build("my_method", ...)
     methods.available()        # {name: None if usable else reason}
@@ -37,7 +37,7 @@ _METHODS: dict[str, MethodSpec] = {}
 
 
 def register(name: str, *, requires: tuple[str, ...] = ()):
-    """Decorator: register ``build(**cfg) -> ColorTransform`` under `name`."""
+    """Decorator: register ``build(**cfg) -> transform`` under `name`."""
     def deco(fn: Callable) -> Callable:
         _METHODS[name] = MethodSpec(name, fn, tuple(requires), (fn.__doc__ or "").strip())
         return fn
@@ -68,4 +68,4 @@ def build(name: str, **cfg):
     return spec.build(**cfg)
 
 
-from . import builtin, hald_extract, pg_ia_nilut, segmented   # noqa: E402,F401  (register methods)
+from . import builtin, pg_ia_nilut   # noqa: E402,F401  (register methods)

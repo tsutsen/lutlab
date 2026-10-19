@@ -1,4 +1,4 @@
-"""Evaluate any `ColorTransform` on paired data and collect a method x task report."""
+"""Evaluate any transform on paired data and collect a method x task report."""
 from __future__ import annotations
 
 import hashlib
@@ -10,8 +10,8 @@ import numpy as np
 from .. import __version__
 from .._arrays import is_torch
 from ..kernels.dispatch import apply
-from ..metrics import quality
-from ..metrics.timing import apply_speed
+from . import quality
+from .timing import apply_speed
 
 __all__ = ["SCHEMA", "evaluate", "run_matrix"]
 
@@ -74,7 +74,7 @@ def evaluate(transform, pairs: Iterable, *, metrics: tuple[str, ...] = ("psnr", 
 
 
 def _is_transform(obj) -> bool:
-    return hasattr(obj, "bake") and hasattr(obj, "n_in")
+    return hasattr(obj, "resample") and hasattr(obj, "n_in")
 
 
 def run_matrix(methods: Mapping[str, object], tasks: Mapping[str, Iterable], *,

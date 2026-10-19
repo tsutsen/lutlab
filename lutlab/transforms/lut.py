@@ -2,11 +2,11 @@
 
 Layout
 ------
-``vol`` has shape ``(D0, ..., Dn-1, 3)``:
+``volume`` has shape ``(D0, ..., Dn-1, 3)``:
 
 * the first ``n`` axes are the INPUT dimensions (axis 0 = input channel 0),
 * the last axis is output RGB,
-* ``vol[i0, ..., in-1]`` is the output at the grid point whose coordinate on
+* ``volume[i0, ..., in-1]`` is the output at the grid point whose coordinate on
   axis ``k`` is ``axes[k][ik]`` (``ik / (Dk - 1)`` when the grid is uniform).
 
 Axes may have different sizes and, optionally, non-uniform sample positions
@@ -18,11 +18,14 @@ channel supplied through ``context=`` when the LUT is called.
 """
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 
 from .base import Cost
+from .._arrays import quantize
 
-__all__ = ["LUT", "identity"]
+__all__ = ["LUT"]
 
 
 def _normalise_axes(axes, sizes):
@@ -60,12 +63,33 @@ def _normalise_domain(domain, n):
     return tuple(float(v) for v in lo), tuple(float(v) for v in hi)
 
 
-class LUT:
-    """A colour lookup table. Immutable: use `replace()` to derive variants."""
+def _grid_points(sizes) -> np.ndarray:
+    pos = [np.linspace(0.0, 1.0, s, dtype=np.float32) for s in sizes]
+    return np.stack(np.meshgrid(*pos, indexing="ij"), -1).reshape(-1, len(sizes))
 
-    def __init__(self, vol, name: str = "lut", *, axes=None, domain=None,
-                 space: str = "srgb") -> None:
-        v = np.array(vol, dtype=np.float32, order="C")          # always a copy
+
+def _resample(lut: "LUT", size) -> "LUT":
+    """Resample a LUT onto a uniform grid by multilinear interpolation."""
+    from ..kernels.dispatch import interpolate
+    sizes = (int(size),) * lut.n_in if np.isscalar(size) else tuple(int(s) for s in size)
+    if len(sizes) != lut.n_in:
+        raise ValueError(f"size has {len(sizes)} entries for a {lut.n_in}-input LUT")
+    out = interpolate(lut.volume, _grid_points(sizes), axes=lut.axes, scheme="multilinear")
+    return LUT(out.reshape(sizes + (3,)), name=lut.name,
+               domain=lut.domain, space=lut.space, bit_depth=lut.bit_depth)
+
+
+class LUT:
+    """A colour lookup table. Immutable: use `replace()` to derive variants.
+
+    ``bit_depth`` (optional) quantises the values to ``2**bit_depth`` levels -- a
+    quality/size/speed lever; ``None`` (default) keeps full float precision. Convert later
+    with :meth:`to_bit_depth`.
+    """
+
+    def __init__(self, volume, name: str = "lut", *, axes=None, domain=None,
+                 space: str = "srgb", bit_depth: int | None = None) -> None:
+        v = np.array(volume, dtype=np.float32, order="C")          # always a copy
         if v.ndim < 2 or v.shape[-1] != 3:
             raise ValueError(f"LUT volume must have shape (D0, ..., Dn-1, 3); got {v.shape}")
         sizes = tuple(int(s) for s in v.shape[:-1])
@@ -73,8 +97,17 @@ class LUT:
             raise ValueError(f"every LUT axis needs >= 2 samples; got sizes {sizes}")
         if not np.isfinite(v).all():
             raise ValueError("LUT contains non-finite values")
+        if bit_depth is not None:
+            top = (2 ** int(bit_depth)) - 1
+            v = np.clip(np.rint(v * top), 0, top).astype(
+                np.uint8 if int(bit_depth) <= 8 else np.uint16)
+            scale = float(top)
+        else:
+            scale = 1.0
         v.flags.writeable = False
-        self._vol = v
+        self._volume = v
+        self._scale = scale
+        self._bit_depth = None if bit_depth is None else int(bit_depth)
         self._sizes = sizes
         self._axes = _normalise_axes(axes, sizes)
         self._dmin, self._dmax = _normalise_domain(domain, len(sizes))
@@ -83,8 +116,13 @@ class LUT:
 
     # -- structure ------------------------------------------------------- #
     @property
-    def vol(self) -> np.ndarray:
-        return self._vol
+    def volume(self) -> np.ndarray:
+        """Read-only float32 ``[0, 1]`` volume (upcast from the stored dtype)."""
+        if self._scale == 1.0:
+            return self._volume
+        v = self._volume.astype(np.float32) / self._scale
+        v.flags.writeable = False
+        return v
 
     @property
     def n_in(self) -> int:
@@ -95,11 +133,21 @@ class LUT:
         return self._sizes
 
     @property
-    def shape(self) -> tuple[int, ...]:
-        return self._vol.shape
+    def bit_depth(self) -> int | None:
+        """Value quantisation (``2**bit_depth`` levels), or ``None`` for full float."""
+        return self._bit_depth
 
     @property
-    def D(self) -> int:
+    def shape(self) -> tuple[int, ...]:
+        return self._volume.shape
+
+    @property
+    def nbytes(self) -> int:
+        """Bytes actually stored (compact for a quantised LUT)."""
+        return int(self._volume.nbytes)
+
+    @property
+    def grid_size(self) -> int:
         """Grid size when every axis has the same size (else ValueError)."""
         if len(set(self._sizes)) != 1:
             raise ValueError(f"LUT axes differ in size {self._sizes}; use .sizes")
@@ -123,12 +171,13 @@ class LUT:
         return all(v == 0.0 for v in self._dmin) and all(v == 1.0 for v in self._dmax)
 
     def __repr__(self) -> str:
-        kb = self._vol.nbytes / 1024
-        return (f"LUT(name={self.name!r}, n_in={self.n_in}, sizes={self._sizes}, "
+        kb = self.nbytes / 1024
+        bd = "float" if self._bit_depth is None else f"{self._bit_depth}-bit"
+        return (f"LUT(name={self.name!r}, n_in={self.n_in}, sizes={self._sizes}, {bd}, "
                 f"space={self.space!r}, {'uniform' if self.is_uniform else 'rectilinear'}, "
                 f"{kb:.1f} KiB)")
 
-    # -- ColorTransform protocol ----------------------------------------- #
+    # -- transform interface --------------------------------------------- #
     def __call__(self, x, *, context=None, interp: str = "multilinear",
                  backend: str = "auto", device=None, check_finite=None):
         """Apply the LUT. See `lutlab.kernels.apply` for the full contract."""
@@ -138,27 +187,64 @@ class LUT:
 
     def cost(self, scheme: str = "multilinear") -> Cost:
         reads = {"nearest": 1, "tetrahedral": 4}.get(scheme, 2 ** self.n_in)
-        return Cost(params=int(self._vol.size), nbytes=int(self._vol.nbytes),
+        return Cost(params=int(self._volume.size), nbytes=self.nbytes,
                     reads_per_px=reads, meta={"sizes": list(self._sizes)})
 
-    def bake(self, D: int | None = None, **_kw) -> "LUT":
-        """Resample onto a uniform D-per-axis grid (self if already that)."""
-        if D is None or (self.is_uniform and self._sizes == (D,) * self.n_in):
-            return self
-        from ..analysis import resample
-        return resample(self, D)
+    def resample(self, grid_size: int | None = None, **_kw) -> "LUT":
+        """A dense `LUT` resampled onto a uniform ``grid_size``-per-axis grid (self if already that).
 
-    # -- derivation / comparison ----------------------------------------- #
-    def replace(self, *, vol=None, name=None, axes="keep", domain="keep", space=None) -> "LUT":
-        return LUT(self._vol if vol is None else vol,
+        ``grid_size`` is an int (same on every axis) or one size per axis.
+        """
+        if grid_size is None or (self.is_uniform and self._sizes == (grid_size,) * self.n_in):
+            return self
+        return _resample(self, grid_size)
+
+    # -- comparison / inspection ------------------------------------------ #
+    def delta_from_identity(self) -> np.ndarray:
+        """``volume`` minus the identity on the same grid: what the LUT changes."""
+        ref = LUT.identity(sizes=self.sizes, axes=self._axes)
+        return self.volume - ref.volume
+
+    def max_delta(self) -> float:
+        """Largest per-channel change the LUT makes at any grid point."""
+        return float(np.abs(self.delta_from_identity()).max())
+
+    def tone_curve(self, n: int = 33) -> tuple[np.ndarray, np.ndarray]:
+        """Output along the grey diagonal ``(t, ..., t)``: returns ``(t, curve[n, 3])``."""
+        from ..kernels.dispatch import interpolate
+        t = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        x = np.repeat(t[:, None], self.n_in, axis=1)
+        return t, interpolate(self.volume, x, axes=self._axes, scheme="multilinear")
+
+    # -- derivation -------------------------------------------------------- #
+    def to_bit_depth(self, n: int) -> "LUT":
+        """A copy with values quantised to ``n`` bits.
+
+        Up-converting beyond the current depth adds no precision (the values only occupy
+        ``2**bit_depth`` levels) and warns; down-converting is a lossy round.
+        """
+        n = int(n)
+        if n < 1:
+            raise ValueError(f"bit_depth must be >= 1, got {n}")
+        if self._bit_depth is not None and n > self._bit_depth:
+            warnings.warn(f"up-converting {self._bit_depth}-bit -> {n}-bit adds no "
+                          f"precision (only {2 ** self._bit_depth} levels present)",
+                          UserWarning)
+        return LUT(quantize(self.volume, n), name=self.name, axes=self._axes,
+                   domain=self.domain, space=self.space, bit_depth=n)
+
+    def replace(self, *, volume=None, name=None, axes="keep", domain="keep", space=None,
+                bit_depth=None) -> "LUT":
+        return LUT(self.volume if volume is None else volume,
                    self.name if name is None else name,
                    axes=self._axes if axes == "keep" else axes,
                    domain=self.domain if domain == "keep" else domain,
-                   space=self.space if space is None else space)
+                   space=self.space if space is None else space,
+                   bit_depth=self._bit_depth if bit_depth is None else bit_depth)
 
     def allclose(self, other: "LUT", atol: float = 1e-6) -> bool:
         return self._sizes == other._sizes and bool(
-            np.allclose(self._vol, other._vol, atol=atol, rtol=0))
+            np.allclose(self.volume, other.volume, atol=atol, rtol=0))
 
     # -- files ------------------------------------------------------------ #
     def save(self, path, **kw) -> None:
@@ -170,25 +256,25 @@ class LUT:
         from ..formats import load
         return load(path, **kw)
 
+    @classmethod
+    def identity(cls, grid_size: int = 17, n_in: int = 3, *, sizes=None, axes=None,
+                 name: str = "identity", space: str = "srgb") -> "LUT":
+        """The do-nothing LUT. Output = the first three input axes.
 
-def identity(D: int = 17, n_in: int = 3, *, sizes=None, axes=None,
-             name: str = "identity", space: str = "srgb") -> LUT:
-    """The do-nothing LUT. Output = the first three input axes.
-
-    ``n_in=1`` gives a grey ramp ``(t, t, t)``; ``n_in>=4`` ignores the extra
-    (context) axes. ``n_in=2`` has no canonical identity and raises.
-    """
-    if sizes is None:
-        sizes = (int(D),) * int(n_in)
-    else:
-        sizes = tuple(int(s) for s in sizes)
-        n_in = len(sizes)
-    if n_in == 2:
-        raise ValueError("a 2-input LUT has no canonical identity")
-    if axes is None:
-        pos = [np.linspace(0.0, 1.0, s) for s in sizes]
-    else:
-        pos = [np.asarray(a, dtype=np.float64) for a in axes]
-    grids = np.meshgrid(*pos, indexing="ij")
-    chans = [grids[0]] * 3 if n_in == 1 else grids[:3]
-    return LUT(np.stack(chans, axis=-1), name=name, axes=axes, space=space)
+        ``n_in=1`` gives a grey ramp ``(t, t, t)``; ``n_in>=4`` ignores the extra
+        (context) axes. ``n_in=2`` has no canonical identity and raises.
+        """
+        if sizes is None:
+            sizes = (int(grid_size),) * int(n_in)
+        else:
+            sizes = tuple(int(s) for s in sizes)
+            n_in = len(sizes)
+        if n_in == 2:
+            raise ValueError("a 2-input LUT has no canonical identity")
+        if axes is None:
+            pos = [np.linspace(0.0, 1.0, s) for s in sizes]
+        else:
+            pos = [np.asarray(a, dtype=np.float64) for a in axes]
+        grids = np.meshgrid(*pos, indexing="ij")
+        chans = [grids[0]] * 3 if n_in == 1 else grids[:3]
+        return LUT(np.stack(chans, axis=-1), name=name, axes=axes, space=space)

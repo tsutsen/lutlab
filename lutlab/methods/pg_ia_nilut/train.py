@@ -210,7 +210,7 @@ def train_pg_ia_nilut(data, scorer=None, cfg: TrainConfig | None = None, *, devi
 
 def build_method(*, checkpoint=None, data=None, scorer=None, device=None,
                  config: TrainConfig | None = None, **cfg_overrides):
-    """Registry entry point (``methods.build('pg_ia_nilut', ...)``) -> a lutlab `ColorTransform`.
+    """Registry entry point (``methods.build('pg_ia_nilut', ...)``) -> a lutlab `transform`.
 
     * ``checkpoint=path``  load a trained model (image-adaptive if it has a predictor)
     * ``data=pairs``       train all three stages, then return the adaptive transform

@@ -2,7 +2,7 @@
 
 * `random_lut`     smooth random LUT (any n_in, optional rectilinear axes)
 * `check_backends` max difference of every backend/scheme vs the numpy oracle
-* `conformance`    the checks every `ColorTransform` must pass
+* `conformance`    the checks every `transform` must pass
 * `selftest`       quick sanity run behind ``python -m lutlab selftest``
 """
 from __future__ import annotations
@@ -14,7 +14,7 @@ import numpy as np
 
 from .kernels import BackendError, backends
 from .kernels.dispatch import apply, interpolate
-from .transforms.lut import LUT, identity
+from .transforms.lut import LUT
 
 __all__ = ["random_lut", "check_backends", "conformance", "selftest"]
 
@@ -35,7 +35,7 @@ def random_lut(size=17, n_in: int = 3, *, seed: int = 0, strength: float = 0.08,
     pts = np.stack(np.meshgrid(*_positions(sizes, axes), indexing="ij"), -1)
     noise = interpolate(coarse, pts.reshape(-1, n_in).astype(np.float32),
                         scheme="multilinear").reshape(sizes + (3,))
-    base = identity(sizes=sizes, axes=axes).vol
+    base = LUT.identity(sizes=sizes, axes=axes).volume
     return LUT(np.clip(base + noise, 0.0, 1.0), name=name, axes=axes)
 
 
@@ -61,18 +61,19 @@ def check_backends(lut: LUT, *, n: int = 500, seed: int = 0, atol: float = 1e-5)
     return out
 
 
-def conformance(transform, *, n: int = 256, seed: int = 0, bake_D: int | None = None,
-                bake_tol: float = 1e-4, bake_kw: dict | None = None,
-                skip_bake: bool = False) -> list[str]:
-    """Checks every `ColorTransform` must pass. Returns failure messages ([] = pass).
+def conformance(transform, *, n: int = 256, seed: int = 0, resample_grid_size: int | None = None,
+                resample_tol: float = 1e-4, resample_kw: dict | None = None,
+                skip_resample: bool = False) -> list[str]:
+    """Checks every `transform` must pass. Returns failure messages ([] = pass).
 
     * output is ``(..., 3)``, finite, and leading shapes are preserved
     * calls are deterministic
-    * ``bake(D)`` reproduces the native output within `bake_tol`. `bake_D`
-      defaults to the transform's own grid size (exact for a LUT) and 17 otherwise.
+    * ``resample(grid_size)`` reproduces the native output within `resample_tol`.
+      `resample_grid_size` defaults to the transform's own grid size (exact for a LUT)
+      and 17 otherwise.
       Resampling onto a grid whose cells do not align with the native one has an
-      inherent gap (and so do neural methods): set `bake_tol` to the accepted gap.
-      ``skip_bake`` disables the check; context-dependent transforms skip it.
+      inherent gap (and so do neural methods): set `resample_tol` to the accepted gap.
+      ``skip_resample`` disables the check; context-dependent transforms skip it.
     """
     fails: list[str] = []
     rng = np.random.default_rng(seed)
@@ -98,20 +99,20 @@ def conformance(transform, *, n: int = 256, seed: int = 0, bake_D: int | None = 
             fails.append(f"leading shape not preserved: got {y4.shape}")
     except Exception as e:
         fails.append(f"multi-dim input failed: {type(e).__name__}: {e}")
-    if not skip_bake and ctx is None:
+    if not skip_resample and ctx is None:
         try:
-            D = bake_D
-            if D is None:
+            grid_size = resample_grid_size
+            if grid_size is None:
                 try:
-                    D = int(transform.D)
+                    grid_size = int(transform.grid_size)
                 except Exception:
-                    D = 17
-            baked = transform.bake(D, **(bake_kw or {}))
+                    grid_size = 17
+            baked = transform.resample(grid_size, **(resample_kw or {}))
             gap = float(np.abs(np.asarray(baked(x)) - y).max())
-            if gap > bake_tol:
-                fails.append(f"bake({D}) differs from native by {gap:.2e} > {bake_tol:.0e}")
+            if gap > resample_tol:
+                fails.append(f"resample({grid_size}) differs from native by {gap:.2e} > {resample_tol:.0e}")
         except Exception as e:
-            fails.append(f"bake failed: {type(e).__name__}: {e}")
+            fails.append(f"resample failed: {type(e).__name__}: {e}")
     return fails
 
 
@@ -143,7 +144,7 @@ def selftest() -> int:
             p = Path(td) / f"t{ext}"
             lut.save(p)
             back = formats.load(p)
-            err = float(np.abs(back.vol - lut.vol).max())
+            err = float(np.abs(back.volume - lut.volume).max())
             check(f"{ext} round-trip", err <= tol, f"(max err {err:.1e})")
     print("selftest:", "OK" if ok else "FAILED")
     return 0 if ok else 1

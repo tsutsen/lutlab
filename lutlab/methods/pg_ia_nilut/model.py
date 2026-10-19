@@ -199,7 +199,7 @@ class PGIANILUT(nn.Module):
                                     bypass=bypass, N=N)
 
     def transform(self, w=None, *, N: int = 33, bypass: bool = True) -> "IANILUTTransform":
-        """A lutlab `ColorTransform`. Fixed parameters ``w``, or (``w=None``) predicted per image."""
+        """A lutlab `transform`. Fixed parameters ``w``, or (``w=None``) predicted per image."""
         return IANILUTTransform(self, w, N=N, bypass=bypass)
 
     def num_parameters(self) -> dict[str, int]:
@@ -229,7 +229,7 @@ class PGIANILUT(nn.Module):
 
 
 class IANILUTTransform:
-    """lutlab `ColorTransform` view of a `PGIANILUT`.
+    """lutlab `transform` view of a `PGIANILUT`.
 
     ``x`` is ``(..., 3)`` float in [0, 1] (numpy in -> numpy out, torch in -> torch out).
     Parameters come from ``context=`` (``(J,)``), else the bound ``w``, else -- for images of
@@ -283,12 +283,12 @@ class IANILUTTransform:
             self.model.train(was_training)
         return out if is_t else out.cpu().numpy()
 
-    def bake(self, D: int | None = None, *, weights=None, **_kw) -> LUT:
+    def resample(self, grid_size: int | None = None, *, weights=None, **_kw) -> LUT:
         """The filter as one `LUT` for global parameters (per-image predicted ones need an image)."""
         w = weights if weights is not None else self.w
         if w is None:
-            raise ValueError("bake() needs global parameters: pass weights= or bind w=")
-        return self.model.filters.lut(w, D or self.N, name=self.name)
+            raise ValueError("resample() needs global parameters: pass weights= or bind w=")
+        return self.model.filters.lut(w, grid_size or self.N, name=self.name)
 
     def cost(self) -> Cost:
         n = self.model.num_parameters()

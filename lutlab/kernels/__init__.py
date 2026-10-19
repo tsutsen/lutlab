@@ -5,7 +5,7 @@ Backends (registry key -> module):
     numpy  -> k_numpy    reference oracle; any n_in, any grid, any scheme
     numba  -> k_numba    fused CPU kernels; uniform grids
     torch  -> k_torch    differentiable, any device; any n_in, any grid
-    fused  -> k_fused    external HIP/CUDA kernel; opt-in, inference only
+    fused  -> k_fused    native HIP kernel; opt-in, inference only
 
 Add a backend by building a `Backend` and calling `register()`.
 """

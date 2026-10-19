@@ -44,7 +44,7 @@ def _auto_always(_req: Request) -> bool:
 class Backend:
     """A registered kernel implementation.
 
-    ``run(vol, x, axes, scheme)`` takes ``vol (D0..Dn-1, 3)`` and ``x (N, n)``
+    ``run(volume, x, axes, scheme)`` takes ``volume (D0..Dn-1, 3)`` and ``x (N, n)``
     (numpy float32, or torch tensors when ``torch_native``) and returns
     ``(N, 3)``. ``unsupported`` / ``available`` return a reason string, or None.
     """

@@ -5,7 +5,7 @@ Enhancement", ACM MM 2024 (arXiv 2408.11055).
 
     from lutlab.methods import pg_ia_nilut as pg
     model = pg.PGIANILUT(pg.IANILUT(), pg.CnnPredictor())
-    t = model.transform()                          # image-adaptive lutlab ColorTransform
+    t = model.transform()                          # image-adaptive lutlab transform
     w = model.filters.weights(exposure=0.4)        # interpretable controls
     lut = model.filters.lut(w, N=33)               # LUT bypassing: a plain lutlab LUT -> .cube
 

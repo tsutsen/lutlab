@@ -1,12 +1,18 @@
-"""lutlab -- a small library and testbed for colour LUTs and LUT-based methods."""
+"""lutlab -- a small library and testbed for colour LUTs and LUT-based methods.
+
+The public surface is small: the `LUT` and `LUTMixture` transforms, the
+`ColorTransform` protocol they follow and the `Cost` type (plus `BackendError`),
+and the submodules `transforms`, `kernels`, `formats`, `methods`, `metrics`,
+`testing`. A *transform* is any object that is callable and has `resample`,
+`cost`, `name` and `n_in` -- `LUT` is the dense implementation, learned methods
+build the others.
+"""
 __version__ = "0.3.0"
 
-from .transforms import LUT, ColorTransform, Cost, LUTMixture, identity
-from .kernels import BackendError, apply, backends
-from .formats import load, save
-from ._arrays import to_float
-from . import analysis, evaluation, formats, kernels, methods, metrics, testing, transforms
+from .transforms import LUT, LUTMixture, ColorTransform, Cost
+from .kernels import BackendError
+from . import formats, kernels, methods, metrics, transforms, testing
 
-__all__ = ["LUT", "LUTMixture", "ColorTransform", "Cost", "identity", "apply", "backends",
-           "BackendError", "load", "save", "to_float", "analysis", "evaluation", "formats",
-           "kernels", "methods", "metrics", "testing", "transforms", "__version__"]
+__all__ = ["LUT", "LUTMixture", "ColorTransform", "Cost", "BackendError",
+           "transforms", "kernels", "formats", "methods", "metrics", "testing",
+           "__version__"]

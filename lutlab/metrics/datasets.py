@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .._arrays import to_float
+from .._arrays import to_float, quantize
 from .._deps import require
 
 __all__ = ["PairFolder"]
@@ -21,7 +21,7 @@ class PairFolder:
     """
 
     def __init__(self, root, input_dir: str = "input", target_dir: str = "target",
-                 exts: tuple[str, ...] = _EXTS) -> None:
+                 exts: tuple[str, ...] = _EXTS, bit_depth: int | None = None) -> None:
         root = Path(root)
         ins = {p.stem: p for p in sorted((root / input_dir).iterdir())
                if p.suffix.lower() in exts}
@@ -30,17 +30,19 @@ class PairFolder:
         self.names = sorted(set(ins) & set(tgs))
         if not self.names:
             raise ValueError(f"no matching pairs under {root}/{input_dir} and /{target_dir}")
-        self._ins, self._tgs = ins, tgs
+        self._ins, self._tgs, self._bit_depth = ins, tgs, bit_depth
 
     def __len__(self) -> int:
         return len(self.names)
 
-    @staticmethod
-    def _read(path: Path) -> np.ndarray:
+    def _read(self, path: Path) -> np.ndarray:
         img = to_float(require("imageio.v3").imread(path))
         if img.ndim == 2:
             img = np.repeat(img[..., None], 3, axis=-1)
-        return img[..., :3]
+        img = img[..., :3]
+        if self._bit_depth is not None:
+            img = quantize(img, self._bit_depth)
+        return img
 
     def __getitem__(self, i: int):
         n = self.names[i]

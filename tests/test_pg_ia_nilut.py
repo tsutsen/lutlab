@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 import lutlab
-from lutlab import evaluation, methods, testing
+from lutlab import methods, metrics, testing
 from lutlab.methods import pg_ia_nilut as pg
 
 # ---- torch-free parts ----------------------------------------------------------- #
@@ -36,7 +36,7 @@ def test_de76_metric():
     a = np.random.default_rng(0).random((8, 8, 3))
     assert lutlab.metrics.de76(a, a).max() == 0.0
     assert float(lutlab.metrics.de76(np.zeros(3), np.ones(3))) == pytest.approx(100.0, abs=0.5)
-    r = evaluation.evaluate(lutlab.identity(9), [(a.astype(np.float32),) * 2], metrics=("de76",))
+    r = metrics.evaluate(lutlab.LUT.identity(9), [(a.astype(np.float32),) * 2], metrics=("de76",))
     assert r["de76_mean"] == pytest.approx(0.0, abs=1e-4)
 
 
@@ -91,8 +91,8 @@ def test_lut_bypassing_builds_a_real_lutlab_lut(E):
     g = E.grid(9)
     with torch.no_grad():
         direct = E(g.reshape(-1, 3), w).reshape(9, 9, 9, 3)
-    assert np.abs(lut.vol - direct.numpy()).max() < 1e-6                   # O = E_hat(I, w), indexed [r, g, b]
-    assert np.abs(E.lut(torch.zeros(5), 9).vol - lutlab.identity(9).vol).max() == 0.0
+    assert np.abs(lut.volume - direct.numpy()).max() < 1e-6                   # O = E_hat(I, w), indexed [r, g, b]
+    assert np.abs(E.lut(torch.zeros(5), 9).volume - lutlab.LUT.identity(9).volume).max() == 0.0
     with pytest.raises(ValueError, match="one parameter vector"):
         E.lut(torch.zeros(2, 5))
 
@@ -122,8 +122,8 @@ def test_numpy_path_through_lutlab_kernels_equals_torch_path(E):
 def test_transform_conformance(E):
     w = E.weights(exposure=0.4, contrast=0.2)
     m = pg.PGIANILUT(E)
-    assert testing.conformance(m.transform(w), bake_D=33, bake_tol=1e-5) == []      # exact: same N=33 LUT
-    assert testing.conformance(m.transform(w, bypass=False), bake_D=33, bake_tol=1e-3) == []
+    assert testing.conformance(m.transform(w), resample_grid_size=33, resample_tol=1e-5) == []      # exact: same N=33 LUT
+    assert testing.conformance(m.transform(w, bypass=False), resample_grid_size=33, resample_tol=1e-3) == []
 
 
 def test_weight_sources_and_errors(E):
@@ -141,7 +141,7 @@ def test_weight_sources_and_errors(E):
     with pytest.raises(ValueError, match="need an image"):
         t(img.reshape(-1, 3))
     with pytest.raises(ValueError, match="global parameters"):
-        t.bake()
+        t.resample()
     assert t.cost().meta["predictor"] == m2.num_parameters()["predictor"] and t.cost().reads_per_px == 8
     assert m2.transform(bypass=False).cost().reads_per_px is None
 
@@ -261,7 +261,7 @@ def test_registry_entry_points(tmp_path):
     t = methods.build("pg_ia_nilut")                          # untrained: w = 0 -> identity
     img = np.random.default_rng(0).random((20, 20, 3)).astype(np.float32)
     assert np.abs(t(img) - img).max() < 1e-5
-    assert testing.conformance(t, bake_D=33, bake_tol=1e-5) == []
+    assert testing.conformance(t, resample_grid_size=33, resample_tol=1e-5) == []
     m = pg.PGIANILUT(pg.IANILUT(), pg.CnnPredictor())
     m.save(tmp_path / "c.pt")
     adaptive = methods.build("pg_ia_nilut", checkpoint=tmp_path / "c.pt")
@@ -272,16 +272,16 @@ def test_plugs_into_the_evaluation_harness_and_exports_cube(tmp_path):
     pytest.importorskip("skimage")
     m = pg.PGIANILUT(pg.IANILUT(), pg.CnnPredictor())
     pairs = [(x, y) for x, y in _toy_pairs(2, 32)]
-    r = evaluation.evaluate(m.transform(), pairs, metrics=("psnr", "ssim", "e00", "de76"),
+    r = metrics.evaluate(m.transform(), pairs, metrics=("psnr", "ssim", "e00", "de76"),
                             timing={"warmup": 1, "repeat": 2})
     assert r["n"] == 2 and {"psnr_db", "ssim", "e00_mean", "de76_mean"} <= set(r)
     assert r["cost"]["params"] == m.num_parameters()["total"] and r["timing"]["fps"] > 0
-    rep = evaluation.run_matrix({"pg_ia_nilut": m.transform()}, {"toy": pairs})
+    rep = metrics.run_matrix({"pg_ia_nilut": m.transform()}, {"toy": pairs})
     assert "error" not in rep["rows"][0]
     # the interpretable filter, frozen at chosen controls, is just a .cube file
     lut = m.filters.lut(m.filters.weights(exposure=0.6), N=17)
     lut.save(tmp_path / "exposure_plus.cube")
-    assert lutlab.load(tmp_path / "exposure_plus.cube").shape == (17, 17, 17, 3)
+    assert lutlab.LUT.load(tmp_path / "exposure_plus.cube").shape == (17, 17, 17, 3)
 
 
 def test_dataset_wrapper_resizes_pairs():

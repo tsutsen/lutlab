@@ -1,0 +1,45 @@
+/* lutlab sidebar helpers.
+   Godot's custom.css renders the caption spoiler (a "❯" that rotates when .active) and
+   the per-page .toctree-expand buttons, but expects Godot's own JS to drive them.
+   We drive them in nav.js; these rules just make the controls feel right. */
+.wy-menu-vertical p.caption {
+    cursor: pointer;
+    user-select: none;
+}
+
+.wy-menu-vertical button.toctree-expand {
+    cursor: pointer;
+    position: relative;
+}
+.wy-menu-vertical button.toctree-expand::after {
+    content: "+";
+    font-weight: 700;
+    font-size: 14px;
+    line-height: 1;
+}
+.wy-menu-vertical button.toctree-expand.open::after {
+    content: "\2212"; /* minus sign */
+}
+
+/* Make the vertical menu stretch to the bottom of the sidebar column. RTD caps it at
+   `calc(100% - 348px)` and leaves the lower part of the column empty; flexing the
+   scroll container lets the menu fill the full height (and scroll when it overflows). */
+.wy-nav-side {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0; /* let the menu scroll area reach the bottom edge */
+}
+.wy-side-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.wy-side-nav-search {
+    flex: 0 0 auto;
+}
+.wy-menu.wy-menu-vertical {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+}

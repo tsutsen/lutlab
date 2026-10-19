@@ -4,6 +4,7 @@ from __future__ import annotations
 import numpy as np
 
 from .._deps import require
+from ..transforms.lut import LUT
 
 __all__ = ["e00", "de76", "psnr", "ssim", "lpips", "accuracy", "lut_space_accuracy"]
 
@@ -88,10 +89,9 @@ def accuracy(out, ref, *, space: str = "srgb") -> dict[str, float]:
 
 def lut_space_accuracy(lut, ref_lut=None, *, space: str | None = None) -> dict[str, float]:
     """How far ``lut`` sits from ``ref_lut`` (default: identity), on the grid."""
-    from ..transforms.lut import identity
-    ref = ref_lut if ref_lut is not None else identity(sizes=lut.sizes, axes=lut.axes)
+    ref = ref_lut if ref_lut is not None else LUT.identity(sizes=lut.sizes, axes=lut.axes)
     if lut.sizes != ref.sizes:
         raise ValueError(f"grids differ: {lut.sizes} vs {ref.sizes}; resample first")
-    d = e00(lut.vol.reshape(-1, 3), ref.vol.reshape(-1, 3), space=space or lut.space)
+    d = e00(lut.volume.reshape(-1, 3), ref.volume.reshape(-1, 3), space=space or lut.space)
     return {"e00_mean": float(d.mean()), "e00_max": float(d.max()),
-            "max_channel": float(np.abs(lut.vol - ref.vol).max())}
+            "max_channel": float(np.abs(lut.volume - ref.volume).max())}

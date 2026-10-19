@@ -64,9 +64,9 @@ def loads(text: str, *, name: str | None = None, space: str = "srgb") -> LUT:
                          f"{d}^3 grid" if d else
                          f"not a 3D .cube LUT: {len(rows)} data rows is not a perfect cube")
     arr = np.asarray(rows, np.float32).reshape(d, d, d, 3)      # indexed [b, g, r]
-    vol = arr.transpose(2, 1, 0, 3)                              # -> [r, g, b]
+    volume = arr.transpose(2, 1, 0, 3)                           # -> [r, g, b]
     default = lo == (0.0,) * 3 and hi == (1.0,) * 3
-    return LUT(vol, name=title or name or "cube", domain=None if default else (lo, hi),
+    return LUT(volume, name=title or name or "cube", domain=None if default else (lo, hi),
                space=space)
 
 
@@ -77,14 +77,14 @@ def dumps(lut: LUT, *, precision: int = 6) -> str:
     if len(set(lut.sizes)) != 1:
         raise ValueError(f".cube needs equal axis sizes, got {lut.sizes}; resample first")
     if not lut.is_uniform:
-        raise ValueError(".cube needs a uniform grid; lut.bake(D) resamples to one")
+        raise ValueError(".cube needs a uniform grid; lut.resample(grid_size) resamples to one")
     lo, hi = lut.domain
     title = lut.name.replace('"', "'")
-    head = [f'TITLE "{title}"', f"LUT_3D_SIZE {lut.D}",
+    head = [f'TITLE "{title}"', f"LUT_3D_SIZE {lut.grid_size}",
             "DOMAIN_MIN " + " ".join(f"{v:g}" for v in lo),
             "DOMAIN_MAX " + " ".join(f"{v:g}" for v in hi)]
     buf = io.StringIO()
-    np.savetxt(buf, lut.vol.transpose(2, 1, 0, 3).reshape(-1, 3), fmt=f"%.{precision}f")
+    np.savetxt(buf, lut.volume.transpose(2, 1, 0, 3).reshape(-1, 3), fmt=f"%.{precision}f")
     return "\n".join(head) + "\n" + buf.getvalue()
 
 

@@ -43,16 +43,16 @@ def _locate(torch, x, sizes, axes):
     return torch.stack(idx, 1), torch.stack(frac, 1)
 
 
-def run(vol, x, axes, scheme):
+def run(volume, x, axes, scheme):
     import torch
     dtype = x.dtype if x.dtype in (torch.float32, torch.float64) else torch.float32
     x = x.to(dtype)
-    vol = vol.to(dtype)
-    sizes = tuple(int(s) for s in vol.shape[:-1])
+    volume = volume.to(dtype)
+    sizes = tuple(int(s) for s in volume.shape[:-1])
     n = len(sizes)
     strides = [int(s) for s in strides_of(sizes)]
     st = torch.tensor(strides, dtype=torch.long, device=x.device)
-    vf = vol.reshape(-1, 3)
+    vf = volume.reshape(-1, 3)
     i0, f = _locate(torch, x, sizes, axes)
     base = (i0 * st).sum(1)
 

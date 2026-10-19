@@ -75,10 +75,10 @@ def _tetrahedral(vf, strides, i0, f):
 _KERNELS = {"nearest": _nearest, "multilinear": _multilinear, "tetrahedral": _tetrahedral}
 
 
-def run(vol, x, axes, scheme):
-    sizes = vol.shape[:-1]
+def run(volume, x, axes, scheme):
+    sizes = volume.shape[:-1]
     strides = strides_of(sizes)
-    vf = vol.reshape(-1, 3)
+    vf = volume.reshape(-1, 3)
     fn = _KERNELS[scheme]
     out = np.empty((x.shape[0], 3), np.float32)
     for s in range(0, x.shape[0], _CHUNK):

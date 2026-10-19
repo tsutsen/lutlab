@@ -2,11 +2,11 @@ import numpy as np
 import pytest
 
 import lutlab
-from lutlab import LUT, identity
+from lutlab import LUT
 
 
 def test_identity_applies_to_itself_all_schemes(rng):
-    lut = identity(9)
+    lut = LUT.identity(9)
     x = rng.random((200, 3)).astype(np.float32)
     for scheme in ("nearest", "multilinear", "tetrahedral"):
         y = lut(x, interp=scheme, backend="numpy")
@@ -16,14 +16,14 @@ def test_identity_applies_to_itself_all_schemes(rng):
 
 @pytest.mark.parametrize("n_in", [1, 3, 4])
 def test_identity_shapes(n_in):
-    lut = identity(5, n_in)
+    lut = LUT.identity(5, n_in)
     assert lut.shape == (5,) * n_in + (3,) and lut.n_in == n_in
-    assert lutlab.analysis.max_delta(lut) == 0.0
+    assert lut.max_delta() == 0.0
 
 
 def test_identity_2d_has_no_canonical_form():
     with pytest.raises(ValueError):
-        identity(5, 2)
+        LUT.identity(5, 2)
 
 
 @pytest.mark.parametrize("bad", [np.zeros((4, 4)), np.zeros((4, 4, 4, 2)), np.zeros(3)])
@@ -60,15 +60,15 @@ def test_immutable_and_copying():
     src = np.zeros((3, 3, 3, 3), np.float32)
     lut = LUT(src)
     src[0, 0, 0, 0] = 9.0
-    assert lut.vol[0, 0, 0, 0] == 0.0
+    assert lut.volume[0, 0, 0, 0] == 0.0
     with pytest.raises(ValueError):
-        lut.vol[0, 0, 0, 0] = 1.0
+        lut.volume[0, 0, 0, 0] = 1.0
 
 
 def test_D_requires_equal_sizes():
-    assert identity(5).D == 5
+    assert LUT.identity(5).grid_size == 5
     with pytest.raises(ValueError):
-        LUT(np.zeros((3, 4, 5, 3))).D
+        LUT(np.zeros((3, 4, 5, 3))).grid_size
 
 
 def test_domain_rescales_input(rng):
@@ -91,21 +91,72 @@ def test_4d_lut_needs_context(rng):
         lut(x)
 
 
-def test_bake_and_replace():
+def test_resample_and_replace():
     lut = lutlab.testing.random_lut(9, 3, seed=4)
-    assert lut.bake(9) is lut and lut.bake() is lut
-    b = lut.bake(17)
+    assert lut.resample(9) is lut and lut.resample() is lut
+    b = lut.resample(17)
     assert b.sizes == (17,) * 3
     assert lut.replace(name="x").name == "x" and lut.replace(name="x").allclose(lut)
 
 
 def test_cost():
-    lut = identity(17)
+    lut = LUT.identity(17)
     c = lut.cost()
     assert c.params == 17 ** 3 * 3 and c.nbytes == c.params * 4 and c.reads_per_px == 8
     assert lut.cost("tetrahedral").reads_per_px == 4 and lut.cost("nearest").reads_per_px == 1
 
 
-def test_is_a_colortransform():
-    assert isinstance(identity(5), lutlab.ColorTransform)
-    assert isinstance(lutlab.LUTMixture([identity(5)]), lutlab.ColorTransform)
+def test_transform_contract():
+    # ColorTransform is a runtime-checkable Protocol: both transforms satisfy it.
+    assert isinstance(LUT.identity(5), lutlab.ColorTransform)
+    assert isinstance(lutlab.LUTMixture([LUT.identity(5)]), lutlab.ColorTransform)
+    # It is the duck type: callable with resample/cost/name/n_in.
+    for t in (LUT.identity(5), lutlab.LUTMixture([LUT.identity(5)])):
+        for attr in ("__call__", "resample", "cost", "name", "n_in"):
+            assert hasattr(t, attr)
+
+
+def test_bit_depth_quantizes_and_converts():
+    import warnings
+    base = LUT.identity(9).volume.copy()
+    base[4, 2, 1, 0] = 0.417          # off-grid value to prove quantisation happens
+
+    lut = LUT(base, bit_depth=8)
+    assert lut.bit_depth == 8 and LUT(base).bit_depth is None
+    assert "8-bit" in repr(lut) and "float" in repr(LUT(base))
+    scaled = np.round(lut.volume.ravel() * 255)          # lies exactly on the 8-bit grid
+    assert np.allclose(lut.volume.ravel(), scaled / 255)
+
+    # down-conversion 16 -> 8: lossy round, no warning
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        l8 = LUT(base, bit_depth=16).to_bit_depth(8)
+    assert l8.bit_depth == 8
+
+    # up-conversion 8 -> 16: adds no precision -> warns; round-trips back
+    with pytest.warns(UserWarning, match="no precision"):
+        up = LUT(base, bit_depth=8).to_bit_depth(16)
+    assert up.bit_depth == 16
+    assert np.allclose(up.to_bit_depth(8).volume, LUT(base, bit_depth=8).volume)
+
+    # float -> 8: a real quantisation, must NOT warn
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        LUT(base).to_bit_depth(8)
+
+    # replace preserves bit_depth
+    assert LUT(base, bit_depth=8).replace().bit_depth == 8
+
+
+def test_compact_storage_memory():
+    """A quantised LUT stores int (compact) and reports the smaller size."""
+    volume = np.random.default_rng(0).random((16, 16, 16, 3), dtype=np.float32)
+    lf, l8, l16 = LUT(volume), LUT(volume, bit_depth=8), LUT(volume, bit_depth=16)
+    assert l8._volume.dtype == np.uint8 and l16._volume.dtype == np.uint16 and lf._volume.dtype == np.float32
+    # the memory win: 4x / 2x smaller, surfaced via .nbytes and cost()
+    assert l8.nbytes == lf.nbytes // 4 and l16.nbytes == lf.nbytes // 2
+    assert l8.cost().nbytes == l8.nbytes and l16.cost().nbytes == l16.nbytes
+    # public .volume is still float32 in [0,1]
+    for l in (l8, l16):
+        assert l.volume.dtype == np.float32
+        assert float(l.volume.min()) >= 0.0 and float(l.volume.max()) <= 1.0

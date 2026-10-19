@@ -7,8 +7,6 @@ import importlib.util
 __all__ = ["have", "require"]
 
 _HINTS = {
-    "robust_hald": "robust_hald is a separate package: `pip install -e /path/to/robust_hald` "
-                   "(or put it on PYTHONPATH)",
     "skimage": "pip install lutlab[metrics]",
     "scipy": "pip install lutlab[fit]",
     "imageio": "pip install lutlab[eval]",

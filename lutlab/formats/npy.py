@@ -19,4 +19,4 @@ def write(lut: LUT, path) -> None:
     if not (lut.is_uniform and lut.has_default_domain):
         raise ValueError(".npy stores the grid only; this LUT has a custom domain or "
                          "non-uniform axes -- use .json")
-    np.save(Path(path), lut.vol)
+    np.save(Path(path), lut.volume)

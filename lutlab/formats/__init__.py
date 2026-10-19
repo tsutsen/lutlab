@@ -1,19 +1,24 @@
-"""Reading and writing LUT files. One `load` / `save` pair, dispatched on extension.
+"""Reading and writing LUT files. One ``load`` / ``save`` pair, dispatched on extension.
 
-    .cube   3D, equal axis sizes, uniform grid (lossy to ~1e-6 at 6 decimals)
-    .json   lossless; any n_in, per-axis sizes, rectilinear axes, domain, space
-    .npy    raw grid only
+Fidelity (see each module for the exact loss):
+
+- ``.cube``   3D cubic, uniform grid. LOSSY: 6-decimal float formatting (~1e-6 max error).
+- ``.json``   LOSSLESS: any n_in, per-axis sizes, rectilinear axes, domain, space.
+- ``.npy``    LOSSLESS raw grid (no metadata).
+- ``.png``    Hald CLUT (ImageMagick ``hald:N``). LOSSY: quantised to the LUT's
+  ``bit_depth`` (8- or 16-bit PNG; max error 1/(2**bit_depth-1)) of a render onto
+  the standard Hald pattern. Needs OpenCV.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from . import cube, lutjson, npy
+from . import cube, hald, lutjson, npy
 from ..transforms.lut import LUT
 
-__all__ = ["load", "save", "formats", "cube", "lutjson", "npy"]
+__all__ = ["load", "save", "formats", "cube", "hald", "lutjson", "npy"]
 
-_BY_EXT = {".cube": cube, ".json": lutjson, ".npy": npy}
+_BY_EXT = {".cube": cube, ".json": lutjson, ".npy": npy, ".png": hald}
 
 
 def formats() -> list[str]:

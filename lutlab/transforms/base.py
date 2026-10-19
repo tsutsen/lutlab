@@ -1,9 +1,10 @@
-"""The unit of comparison: a `ColorTransform` maps colours to colours.
+"""`Cost` and the `ColorTransform` contract.
 
-A dense LUT is one implementation. NILUT-style MLPs, parametric grades,
-basis-LUT mixtures and image-adaptive methods are others. Anything that
-satisfies this protocol can be benchmarked, baked to a grid and
-conformance-tested the same way.
+A dense `LUT` is the central transform. NILUT-style MLPs, parametric grades and
+image-adaptive methods are others. `ColorTransform` is a `Protocol` (not a base
+class): any object that is *callable* and has `resample`, `cost`, `name` and
+`n_in` satisfies it -- that contract is what :func:`lutlab.testing.conformance`
+checks.
 """
 from __future__ import annotations
 
@@ -28,20 +29,23 @@ class Cost:
 
 @runtime_checkable
 class ColorTransform(Protocol):
-    """Protocol every colour transform follows.
+    """The contract every colour transform follows.
 
-    ``__call__`` takes ``x`` of shape ``(..., C)`` with values in the
-    transform's input domain and returns ``(..., 3)``. ``context`` carries
-    extra per-pixel or global inputs (4D-LUT context, mixture weights, style
-    codes). Implementations should accept and ignore unknown keyword
-    arguments such as ``interp=`` and ``backend=``.
+    ``__call__`` takes ``x`` of shape ``(..., C)`` in the transform's input
+    domain and returns ``(..., 3)``. ``context`` carries extra per-pixel or
+    global inputs (mixture weights, 4D-LUT context, style codes).
+    Implementations should accept and ignore unknown keyword arguments such as
+    ``interp=`` and ``backend=``.
+
+    A structural `Protocol`, not a base class: `LUT` and `LUTMixture` satisfy it
+    without inheriting from it. The behavioural checks live in
+    :func:`lutlab.testing.conformance`.
     """
     name: str
     n_in: int
 
     def __call__(self, x, *, context=None, **kw): ...
 
-    def bake(self, D: int = 17, **kw) -> Any:
-        """Return an equivalent dense `LUT` on a D-point-per-axis grid."""
+    def resample(self, *args, **kw) -> "ColorTransform": ...
 
-    def cost(self) -> Cost: ...
+    def cost(self, *args, **kw) -> Cost: ...

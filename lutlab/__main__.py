@@ -14,7 +14,7 @@ def _info() -> int:
     import lutlab
     print(f"lutlab {lutlab.__version__}  (numpy {np.__version__})")
     print("\nbackends:")
-    for n, i in lutlab.backends().items():
+    for n, i in lutlab.kernels.backends().items():
         flags = ", ".join(f for f, on in (("reference", i.reference), ("differentiable",
                           i.differentiable), ("opt-in", not i.auto)) if on)
         state = "available" if i.available else f"unavailable: {i.reason}"
@@ -30,7 +30,7 @@ def _convert(args: list[str]) -> int:
         print("usage: python -m lutlab convert SRC DST")
         return 2
     import lutlab
-    lutlab.save(lutlab.load(args[0]), args[1])
+    lutlab.LUT.load(args[0]).save(args[1])
     print(f"wrote {args[1]}")
     return 0
 

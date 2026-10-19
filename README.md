@@ -2,18 +2,18 @@
 
 A small library and testbed for colour LUTs and LUT-based methods: load and save
 LUTs, apply them on CPU or GPU with several interpolation schemes, measure
-them, and compare methods (extraction, segmented fits, and, next, learned
-LUTs such as NILUT or 4D LUT) under one evaluation harness.
+them, and compare methods (such as a learned NILUT) under one evaluation
+harness.
 
 ```python
 import numpy as np
 import lutlab
 
-lut = lutlab.testing.random_lut(17, seed=0)        # or: lutlab.load("grade.cube")
+lut = lutlab.testing.random_lut(17, seed=0)        # or: lutlab.LUT.load("grade.cube")
 lut.save("grade.cube")                             # .cube / .json / .npy
-lut = lutlab.load("grade.cube")
+lut = lutlab.LUT.load("grade.cube")
 
-img = np.random.rand(1080, 1920, 3).astype(np.float32)   # float in [0, 1] (see lutlab.to_float)
+img = np.random.rand(1080, 1920, 3).astype(np.float32)   # float in [0, 1]
 out = lut(img, interp="tetrahedral")               # backend="auto": numba if installed
 print(lutlab.metrics.e00(out, img).mean())         # CIEDE2000; needs the `metrics` extra
 ```
@@ -27,26 +27,24 @@ pip install "lutlab[torch]"        # + differentiable / GPU kernels (or install 
 pip install "lutlab[metrics]"      # + CIEDE2000 / SSIM        ([eval] adds imageio for PairFolder)
 ```
 
-`robust_hald` (Hald extraction, segmented fits, the fused GPU kernel) is a
-separate package: `pip install -e /path/to/robust_hald`. Nothing else needs it.
-`python -m lutlab info` shows what is available on your machine.
+The opt-in `fused` backend is a native HIP kernel compiled from source in
+`lutlab/kernels/` (no separate package). `python -m lutlab info` shows what is
+available on your machine.
 
 ## Layout
 
 | package | what lives there |
 |---|---|
-| `lutlab.transforms` | `ColorTransform` protocol, `LUT`, `LUTMixture`, `identity` |
-| `lutlab.kernels` | `apply()`, backend registry; `k_numpy`, `k_numba`, `k_torch`, `k_fused` |
-| `lutlab.formats` | `load` / `save` for `.cube`, `.json`, `.npy` |
-| `lutlab.analysis` | `resample`, `delta_from_identity`, `tone_curve` |
-| `lutlab.metrics` | `quality` (e00, psnr, ssim, lpips), `timing`, `power` |
-| `lutlab.methods` | method registry: things that *produce* a transform (`hald_extract`, `segmented`, ...) |
-| `lutlab.evaluation` | `evaluate`, `run_matrix`, `PairFolder` |
+| `lutlab.transforms` | `LUT`, `LUTMixture`, `Cost` |
+| `lutlab.kernels` | `apply()`, `interpolate()`, `backends()`, backend registry; `k_numpy`, `k_numba`, `k_torch`, `k_fused` |
+| `lutlab.formats` | `load` / `save` for `.cube`, `.json`, `.npy`, `.png` (Hald) |
+| `lutlab.metrics` | quality (e00, psnr, ssim, lpips), timing, power, and the evaluation harness (`evaluate`, `run_matrix`, `PairFolder`) |
+| `lutlab.methods` | method registry: things that *produce* a transform (`identity`, `pg_ia_nilut`) |
 | `lutlab.testing` | `random_lut`, `check_backends`, `conformance` |
 
 ## Conventions
 
-* `LUT.vol` is `(D0, ..., Dn-1, 3)`: input axes first, output RGB last. Axes may differ in size and may
+* `LUT.volume` is `(D0, ..., Dn-1, 3)`: input axes first, output RGB last. Axes may differ in size and may
   be non-uniform (`axes=`); a 4D LUT is `n_in=4` with the 4th input passed as `context=`.
 * Inputs are float in the LUT's `domain` (default `[0, 1]`); out-of-range values clamp on every backend;
   NaN/inf and integer images raise instead of silently misbehaving.
@@ -64,9 +62,7 @@ separate package: `pip install -e /path/to/robust_hald`. Nothing else needs it.
 
 | method | needs | what it is |
 |---|---|---|
-| `identity` | - | the do-nothing LUT, the baseline |
-| `hald_extract`, `pair_extract` | `robust_hald` | read a LUT back from a Hald render / before-after pair |
-| `segmented` | `robust_hald`, scipy | per-segment parametric grades baked to a `LUTMixture` |
+| `identity` (`LUT.identity`) | - | the do-nothing LUT, the baseline |
 | `pg_ia_nilut` | torch (+ `open_clip` to train) | Kosugi, MM'24 ([arXiv 2408.11055](https://arxiv.org/abs/2408.11055)) |
 
 **PG-IA-NILUT**: an MLP filter `E(x, w) = x + e([x, sort(x), w]) - e([x, sort(x), 0])` whose five
@@ -91,11 +87,11 @@ which values are from the paper and which are placeholders.
 ## Adding things
 
 ```python
-# a backend: a function (vol, x[N, n], axes, scheme) -> [N, 3] plus capability checks
+# a backend: a function (volume, x[N, n], axes, scheme) -> [N, 3] plus capability checks
 from lutlab.kernels import Backend, register
 register(Backend(name="mine", run=run, unsupported=lambda req: None, priority=25))
 
-# a method: anything that builds a ColorTransform
+# a method: anything that builds a transform
 from lutlab import methods
 @methods.register("nilut", requires=("torch",))
 def build(*, image=None, target=None, **cfg): ...

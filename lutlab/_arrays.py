@@ -5,7 +5,7 @@ import sys
 
 import numpy as np
 
-__all__ = ["is_torch", "to_float"]
+__all__ = ["is_torch", "to_float", "quantize"]
 
 
 def is_torch(x) -> bool:
@@ -25,3 +25,17 @@ def to_float(img, dtype=np.float32) -> np.ndarray:
         return a.astype(dtype, copy=False)
     raise TypeError(f"cannot convert dtype {a.dtype} to float image; "
                     "expected uint8, uint16 or a floating dtype")
+
+
+def quantize(img, bit_depth, dtype=np.float32) -> np.ndarray:
+    """Round a ``[0, 1]`` float array onto the ``2**bit_depth`` level grid.
+
+    Result values are exactly ``k / (2**bit_depth - 1)`` (the LUT/image ``bit_depth``
+    representation).
+    """
+    bit_depth = int(bit_depth)
+    if bit_depth < 1:
+        raise ValueError(f"bit_depth must be >= 1, got {bit_depth}")
+    top = (2 ** bit_depth) - 1
+    a = np.asarray(img)
+    return (np.clip(np.rint(a.astype(np.float64) * top), 0, top) / top).astype(dtype)

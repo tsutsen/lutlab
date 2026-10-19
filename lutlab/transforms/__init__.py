@@ -1,6 +1,6 @@
-"""Colour transforms: the `ColorTransform` protocol, `LUT`, `LUTMixture`."""
+"""Colour transforms: the `ColorTransform` protocol, `LUT`, `LUTMixture`, `Cost`."""
 from .base import ColorTransform, Cost
-from .lut import LUT, identity
+from .lut import LUT
 from .mixture import LUTMixture
 
-__all__ = ["ColorTransform", "Cost", "LUT", "identity", "LUTMixture"]
+__all__ = ["ColorTransform", "Cost", "LUT", "LUTMixture"]

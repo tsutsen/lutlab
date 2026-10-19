@@ -24,7 +24,7 @@ def dumps(lut: LUT) -> str:
         "axes": None if lut.axes is None else [a.astype(float).tolist() for a in lut.axes],
         "domain": {"min": list(lo), "max": list(hi)},
         "dtype": "<f4",
-        "data": base64.b64encode(np.ascontiguousarray(lut.vol, dtype="<f4").tobytes()).decode(),
+        "data": base64.b64encode(np.ascontiguousarray(lut.volume, dtype="<f4").tobytes()).decode(),
     }
     return json.dumps(obj)
 
@@ -36,11 +36,11 @@ def loads(text: str, *, name: str | None = None) -> LUT:
         raise ValueError(f"unrecognised LUT json (format={fmt!r}, version={ver!r})")
     raw = np.frombuffer(base64.b64decode(obj["data"]), dtype="<f4")
     if fmt == "lutlab v1":                                        # lutlab 0.1
-        vol = raw.reshape((obj["D"],) * obj["ndim"] + (3,))
-        return LUT(vol, name=obj.get("name") or name or "lut")
-    vol = raw.reshape(tuple(obj["sizes"]) + (3,))
+        volume = raw.reshape((obj["D"],) * obj["ndim"] + (3,))
+        return LUT(volume, name=obj.get("name") or name or "lut")
+    volume = raw.reshape(tuple(obj["sizes"]) + (3,))
     dom = obj.get("domain")
-    return LUT(vol, name=obj.get("name") or name or "lut", axes=obj.get("axes"),
+    return LUT(volume, name=obj.get("name") or name or "lut", axes=obj.get("axes"),
                domain=None if dom is None else (dom["min"], dom["max"]),
                space=obj.get("space", "srgb"))
 
