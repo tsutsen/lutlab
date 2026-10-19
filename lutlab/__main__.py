@@ -1,46 +1,52 @@
-"""`python -m lutlab <command>`
+"""``python -m lutlab <command>``
 
-    docs      build the HTML docs (Sphinx + Read the Docs theme) -> ./lutlab_docs/
-    selftest  run the quick correctness checks (interp, round-trips, backends)
-    bench     run the method-matrix benchmark -> results.json
+    info                    versions, backend availability, registered methods
+    selftest                quick sanity checks (backend agreement, round-trips)
+    convert SRC DST         convert between .cube / .json / .npy
 """
 from __future__ import annotations
 
-import os
-import subprocess
 import sys
 
 
-def _docs(args: list[str]) -> int:
-    out = args[0] if args else "lutlab_docs"
-    try:
-        import sphinx  # noqa: F401
-    except ImportError:
-        print("sphinx is not installed -- "
-              "`pip install sphinx sphinx-rtd-theme` and retry.")
-        return 1
-    # Sphinx source lives in lutlab/docs/ (Read the Docs theme, Godot-like).
-    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs")
-    r = subprocess.run([sys.executable, "-m", "sphinx", "-b", "html",
-                        src, out])
-    print(f"wrote docs -> {out}/")
-    return r.returncode
+def _info() -> int:
+    import numpy as np
+    import lutlab
+    print(f"lutlab {lutlab.__version__}  (numpy {np.__version__})")
+    print("\nbackends:")
+    for n, i in lutlab.backends().items():
+        flags = ", ".join(f for f, on in (("reference", i.reference), ("differentiable",
+                          i.differentiable), ("opt-in", not i.auto)) if on)
+        state = "available" if i.available else f"unavailable: {i.reason}"
+        print(f"  {n:<6} {state}" + (f"  [{flags}]" if flags else ""))
+    print("\nmethods:")
+    for n, why in lutlab.methods.available().items():
+        print(f"  {n:<14} {'available' if why is None else 'unavailable (' + why + ')'}")
+    return 0
+
+
+def _convert(args: list[str]) -> int:
+    if len(args) != 2:
+        print("usage: python -m lutlab convert SRC DST")
+        return 2
+    import lutlab
+    lutlab.save(lutlab.load(args[0]), args[1])
+    print(f"wrote {args[1]}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     cmd = argv[0] if argv else "help"
-    if cmd == "docs":
-        return _docs(argv[1:])
+    if cmd == "info":
+        return _info()
     if cmd == "selftest":
-        from .selftest import run
-        return run(argv[1:])
-    if cmd == "bench":
-        from .bench import main as bmain
-        bmain()
-        return 0
+        from .testing import selftest
+        return selftest()
+    if cmd == "convert":
+        return _convert(argv[1:])
     print(__doc__.strip())
-    return 0
+    return 0 if cmd in ("help", "-h", "--help") else 2
 
 
 if __name__ == "__main__":

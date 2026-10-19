@@ -1,75 +1,113 @@
 # lutlab
 
-A small Python library for 3D colour lookup tables (LUTs): **load** them in the
-major formats, **apply** them to images on CPU or GPU, **interpolate** between
-table nodes, **measure** quality (ΔE₀₀, PSNR, SSIM, LPIPS) and speed, and
-**extract** a LUT from a Hald CLUT image.
+A small library and testbed for colour LUTs and LUT-based methods: load and save
+LUTs, apply them on CPU or GPU with several interpolation schemes, measure
+them, and compare methods (extraction, segmented fits, and, next, learned
+LUTs such as NILUT or 4D LUT) under one evaluation harness.
 
-The motivation and the benchmark results are in the companion paper,
-[`lutlab-paper`](https://github.com/tsutsen/lutlab-paper).
+```python
+import numpy as np
+import lutlab
+
+lut = lutlab.testing.random_lut(17, seed=0)        # or: lutlab.load("grade.cube")
+lut.save("grade.cube")                             # .cube / .json / .npy
+lut = lutlab.load("grade.cube")
+
+img = np.random.rand(1080, 1920, 3).astype(np.float32)   # float in [0, 1] (see lutlab.to_float)
+out = lut(img, interp="tetrahedral")               # backend="auto": numba if installed
+print(lutlab.metrics.e00(out, img).mean())         # CIEDE2000; needs the `metrics` extra
+```
 
 ## Install
 
-```bash
-# CPU (numpy / numba backends) — nothing else needed:
-uv venv && uv pip install -e .        # or: pip install -e .
-
-# GPU (grid_sample / fused backends) — additionally:
-#   1. a ROCm or CUDA build of torch (2.x), and
-#   2. the `robust_hald` package importable (it provides grid_sample + the fused kernel).
-#      e.g. put it on PYTHONPATH, or `uv pip install -e /path/to/robust_hald`.
+```
+pip install lutlab                 # numpy only: reference backend, formats, LUT type
+pip install "lutlab[fast]"         # + numba CPU kernels
+pip install "lutlab[torch]"        # + differentiable / GPU kernels (or install your own ROCm/CUDA torch)
+pip install "lutlab[metrics]"      # + CIEDE2000 / SSIM        ([eval] adds imageio for PairFolder)
 ```
 
-## Quickstart
+`robust_hald` (Hald extraction, segmented fits, the fused GPU kernel) is a
+separate package: `pip install -e /path/to/robust_hald`. Nothing else needs it.
+`python -m lutlab info` shows what is available on your machine.
+
+## Layout
+
+| package | what lives there |
+|---|---|
+| `lutlab.transforms` | `ColorTransform` protocol, `LUT`, `LUTMixture`, `identity` |
+| `lutlab.kernels` | `apply()`, backend registry; `k_numpy`, `k_numba`, `k_torch`, `k_fused` |
+| `lutlab.formats` | `load` / `save` for `.cube`, `.json`, `.npy` |
+| `lutlab.analysis` | `resample`, `delta_from_identity`, `tone_curve` |
+| `lutlab.metrics` | `quality` (e00, psnr, ssim, lpips), `timing`, `power` |
+| `lutlab.methods` | method registry: things that *produce* a transform (`hald_extract`, `segmented`, ...) |
+| `lutlab.evaluation` | `evaluate`, `run_matrix`, `PairFolder` |
+| `lutlab.testing` | `random_lut`, `check_backends`, `conformance` |
+
+## Conventions
+
+* `LUT.vol` is `(D0, ..., Dn-1, 3)`: input axes first, output RGB last. Axes may differ in size and may
+  be non-uniform (`axes=`); a 4D LUT is `n_in=4` with the 4th input passed as `context=`.
+* Inputs are float in the LUT's `domain` (default `[0, 1]`); out-of-range values clamp on every backend;
+  NaN/inf and integer images raise instead of silently misbehaving.
+* The return type follows the input: numpy in, numpy out; torch in, torch out (differentiable on `torch`).
+* `device=None` means "where the data is". Pass `device="cuda"` to send numpy input through a GPU backend.
+
+| backend | runs on | grids | n_in | differentiable |
+|---|---|---|---|---|
+| `numpy` (reference) | CPU | any | any | no |
+| `numba` | CPU, multi-threaded | uniform | any | no |
+| `torch` | CPU / CUDA / ROCm / MPS | any | any | yes |
+| `fused` (opt-in) | CUDA / ROCm | cubic uniform, trilinear | 3 | no |
+
+## Included methods
+
+| method | needs | what it is |
+|---|---|---|
+| `identity` | - | the do-nothing LUT, the baseline |
+| `hald_extract`, `pair_extract` | `robust_hald` | read a LUT back from a Hald render / before-after pair |
+| `segmented` | `robust_hald`, scipy | per-segment parametric grades baked to a `LUTMixture` |
+| `pg_ia_nilut` | torch (+ `open_clip` to train) | Kosugi, MM'24 ([arXiv 2408.11055](https://arxiv.org/abs/2408.11055)) |
+
+**PG-IA-NILUT**: an MLP filter `E(x, w) = x + e([x, sort(x), w]) - e([x, sort(x), 0])` whose five
+parameters `w` get interpretable names (Exposure, Contrast, Saturation, Color temperature, Tint) from a
+CLIP-based prompt guidance loss. At test time the MLP is baked into a 33^3 LUT ("LUT bypassing"), which
+here is simply a lutlab `LUT`:
 
 ```python
-import numpy as np, lutlab
+from lutlab.methods import pg_ia_nilut as pg
 
-lut  = lutlab.load_lut("sunset.cube")          # or .npy / .json / a LUT object
-img  = np.random.rand(1080, 1920, 3)           # float, in [0, 1]
-out  = lutlab.apply(lut, img, interp="trilinear", backend="auto")
-
-# quality of `out` against a reference:
-lutlab.metrics.e00(out, ref).mean()
-
-# build a Hald CLUT image and read a LUT back from it:
-hald = lutlab.hald.make_hald(levels=17, cell=12)
-lut2 = lutlab.extract(hald)
+model = pg.PGIANILUT(pg.IANILUT(), pg.CnnPredictor())      # filters E + parameter predictor F
+w = model.filters.weights(exposure=0.4, color_temperature=-0.2)
+model.filters.lut(w, N=33).save("look.cube")                # LUT bypassing -> .cube
+out = model.transform(w)(img)                               # numpy image through lutlab's CPU kernels
+out = model.transform()(img)                                # w = F(img): image-adaptive enhancement
 ```
 
-`backend=` picks the accelerator: `auto` (GPU if present, else numba), `numpy`,
-`numba`, `gpu` (grid_sample), `fused` (single-pass HIP/CUDA kernel — fastest on
-the GPU, no PCIe round-trip).
+Training runs the paper's three stages (`pg.train_pg_ia_nilut`, see `examples/train_pg_ia_nilut.py`).
+The paper does not state optimiser settings, loss weights or the CLIP backbone; `TrainConfig` marks
+which values are from the paper and which are placeholders.
 
-## Modules
+## Adding things
 
-| module | what it does |
-|---|---|
-| `lutlab.lut` | the `LUT` container (volume, name, metadata) |
-| `lutlab.apply` | apply a LUT to an image (`backend=`, `interp=`) |
-| `lutlab.interp` | `nearest`, `trilinear` (default `multilinear`), `tetrahedral` |
-| `lutlab.formats` | load/save `.cube`, `.npy`, `.json` (resample on load) |
-| `lutlab.metrics` | ΔE₀₀, PSNR, SSIM, LPIPS, apply-speed, accuracy |
-| `lutlab.hald` | generate a Hald CLUT image and extract a LUT from one |
-| `lutlab.extract` | convenience extraction entry points |
-| `lutlab.segmented` | segmented LUTs (K-means segments + per-segment parametric grade) |
+```python
+# a backend: a function (vol, x[N, n], axes, scheme) -> [N, 3] plus capability checks
+from lutlab.kernels import Backend, register
+register(Backend(name="mine", run=run, unsupported=lambda req: None, priority=25))
 
-Run the self-test: `python -m lutlab.selftest`.
+# a method: anything that builds a ColorTransform
+from lutlab import methods
+@methods.register("nilut", requires=("torch",))
+def build(*, image=None, target=None, **cfg): ...
+```
 
-## Interpolation kernels
+Every transform should pass `lutlab.testing.conformance(t)`; the test suite parametrizes over
+backends, so a new backend is checked against the numpy oracle and scipy for free.
 
-- **nearest** — 1 read, no smoothness (banding).
-- **trilinear** (= `multilinear`, the default) — 8 reads, smooth, on every backend.
-- **tetrahedral** — 4 reads, smoothest; on CPU only in the current build
-  (a GPU tetrahedral path is not exposed yet — see the paper's *Limitations*).
+## Development
 
-## GPU / fused kernel
+```
+pip install -e ".[dev]" && pytest
+```
 
-The `fused` backend compiles a small HIP/CUDA kernel at first use (~1 s, cached).
-On ROCm it needs `hipcc` and the ROCm dev libraries (`hipsparse`, `hipblas`,
-`hipsolver`, `hipfft`, `hiprand`, `thrust`). On Arch/CachyOS: `sudo pacman -S rocm`
-pulls them. The kernel is benchmarked in the paper (fastest measured apply path).
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+See `MIGRATION.md` for what changed from 0.1.

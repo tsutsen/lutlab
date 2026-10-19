@@ -4,27 +4,27 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lutlab"
-version = "0.1.0"
-description = "A small LUT (3D lookup table) library: load, apply, interpolate, measure, and extract colour LUTs."
+version = "0.3.0"
+description = "A small library and testbed for colour LUTs and LUT-based methods"
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
-license = { text = "MIT" }
-authors = [{ name = "tsutsen", email = "harlov.leonid@ya.ru" }]
-dependencies = [
-  "numpy",
-  "scipy",
-  "numba",
-  "scikit-image",
-]
+dependencies = ["numpy>=1.23"]
 
-# GPU backends (backend='gpu' / 'fused') need an ROCm/CUDA torch build plus the
-# `robust_hald` package on the path (grid_sample + fused HIP kernel). CPU backends
-# (numpy, numba) need nothing extra.
 [project.optional-dependencies]
-gpu = ["torch"]
-
-[project.scripts]
-lutlab = "lutlab.__main__:main"
+fast = ["numba>=0.57"]                       # multi-threaded CPU kernels
+torch = ["torch>=2.0"]                       # differentiable / GPU kernels, learned methods
+clip = ["torch>=2.0", "open_clip_torch>=2.20"]   # CLIP scorer for PG-IA-NILUT
+metrics = ["scikit-image>=0.20"]             # CIEDE2000, SSIM
+fit = ["scipy>=1.9"]                         # segmented-LUT fitting
+eval = ["scikit-image>=0.20", "imageio>=2.30"]
+all = ["numba>=0.57", "torch>=2.0", "open_clip_torch>=2.20", "scikit-image>=0.20", "scipy>=1.9", "imageio>=2.30"]
+dev = ["pytest>=7", "scipy>=1.9", "scikit-image>=0.20", "imageio>=2.30", "numba>=0.57"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["lutlab"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["error::DeprecationWarning:lutlab"]
