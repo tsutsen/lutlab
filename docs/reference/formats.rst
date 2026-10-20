@@ -59,16 +59,16 @@ Submodules
      - **Description**
    * - ``cube``
      - ``.cube``
-     - Adobe Photoshop / 3D LUT ``.cube`` text format (8/16-bit, uniform grid).
+     - Adobe Photoshop / 3D LUT ``.cube`` text format; decimal precision follows the LUT's ``bit_depth`` (8 -> 3 digits, ..., 16 -> 5).
    * - ``hald``
      - ``.png``
      - Hald CLUT pattern (8-bit or 16-bit PNG); round-trips ``bit_depth``.
    * - ``lutjson``
      - ``.json``
-     - Lossless JSON container (base64 float32 grid) with axes / domain / space.
+     - Lossless JSON container: the compact grid (uint8 / uint16 / float32) plus ``bit_depth``, axes / domain / space.
    * - ``npy``
      - ``.npy``
-     - Raw float32 grid via ``numpy`` -- the simplest round-trip.
+     - Raw compact grid via ``numpy``: uint8 (8-bit), uint16 (16-bit), float32 otherwise; no metadata.
 
 ----
 

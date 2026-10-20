@@ -2,9 +2,14 @@
 
 Fidelity (see each module for the exact loss):
 
-- ``.cube``   3D cubic, uniform grid. LOSSY: 6-decimal float formatting (~1e-6 max error).
-- ``.json``   LOSSLESS: any n_in, per-axis sizes, rectilinear axes, domain, space.
-- ``.npy``    LOSSLESS raw grid (no metadata).
+- ``.cube``   3D cubic, uniform grid. Text; decimal precision follows the LUT's
+  ``bit_depth`` (8 -> 3 digits, ..., 16 -> 5), so a quantised LUT round-trips within
+  half a grid step; unquantised uses 6 decimals (~1e-6 max error).
+- ``.json``   LOSSLESS: the LUT's compact grid (uint8/uint16/float32) plus explicit
+  ``bit_depth``; any n_in, per-axis sizes, rectilinear axes, domain, space.
+- ``.npy``    LOSSLESS raw compact grid, no metadata: uint8 (8-bit), uint16 (16-bit)
+  or float32 (10/12-bit and unquantised -- a bare uint16 file cannot carry
+  ``bit_depth``; use ``.json`` for those).
 - ``.png``    Hald CLUT (ImageMagick ``hald:N``). LOSSY: quantised to the LUT's
   ``bit_depth`` (8- or 16-bit PNG; max error 1/(2**bit_depth-1)) of a render onto
   the standard Hald pattern. Needs OpenCV.

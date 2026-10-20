@@ -133,6 +133,18 @@ class LUT:
         return self._sizes
 
     @property
+    def raw(self) -> np.ndarray:
+        """Compact stored volume (read-only): uint8 (8-bit), uint16 (10/12/16-bit)
+        or float32 (no quantisation). ``volume`` is the normalised float32 view."""
+        return self._volume
+
+    @property
+    def raw_top(self) -> int | None:
+        """Highest integer code in :attr:`raw` (``2**bit_depth - 1``), or ``None``.
+        Divide ``raw`` by ``raw_top`` to get ``volume``."""
+        return None if self._bit_depth is None else (2 ** self._bit_depth) - 1
+
+    @property
     def bit_depth(self) -> int | None:
         """Value quantisation (``2**bit_depth`` levels), or ``None`` for full float."""
         return self._bit_depth

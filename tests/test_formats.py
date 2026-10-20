@@ -100,6 +100,41 @@ def test_npy_and_dispatch(tmp_path):
     assert formats.formats() == [".cube", ".json", ".npy", ".png"]
 
 
+def test_compact_storage_roundtrip_and_size(tmp_path):
+    base = testing.random_lut(9, 3, seed=5)
+    f = tmp_path / "f.npy"
+    base.save(f)
+    # .npy: 8-bit -> uint8 (quarter size), 10/16-bit -> uint16, all exact
+    for bd in (8, 10, 16):
+        lut = base.to_bit_depth(bd)
+        p = tmp_path / f"l{bd}.npy"
+        lut.save(p)
+        back = LUT.load(p)
+        # values are exact at every depth; the bit_depth TAG survives only in
+        # unambiguous storage (uint8/uint16), 10/12-bit float32 keeps values only
+        assert np.abs(back.volume - lut.volume).max() == 0
+        assert back.bit_depth == bd if bd in (8, 16) else back.bit_depth is None
+    # 8-bit -> uint8 (quarter size), 16-bit -> uint16 (half); 10/12-bit stay float32
+    assert (tmp_path / "l8.npy").stat().st_size < f.stat().st_size * 0.35
+    assert (tmp_path / "l16.npy").stat().st_size < f.stat().st_size * 0.6
+    assert (tmp_path / "l10.npy").stat().st_size == f.stat().st_size
+    # .json: exact at every depth, compact dtype on disk
+    lut16 = base.to_bit_depth(16)
+    pj = tmp_path / "l16.json"
+    lut16.save(pj)
+    obj = json.loads(pj.read_text())
+    assert obj["version"] == 3 and obj["dtype"] == "<u2" and obj["bit_depth"] == 16
+    backj = LUT.load(pj)
+    assert backj.bit_depth == 16 and np.abs(backj.volume - lut16.volume).max() == 0
+    # .cube: 8-bit uses 3 decimals -> round-trip within half a grid step
+    lut8 = base.to_bit_depth(8)
+    pc = tmp_path / "l8.cube"
+    lut8.save(pc)
+    assert np.abs(LUT.load(pc).volume - lut8.volume).max() < 0.001
+    data_lines = pc.read_text().splitlines()
+    assert all(len(line.split()[0].split(".")[1]) == 3 for line in data_lines[-100:])
+
+
 def test_hald_roundtrip_by_bit_depth(tmp_path):
     pytest.importorskip("cv2")
     for bd, top in ((8, 255.0), (16, 65535.0)):

@@ -168,6 +168,14 @@ The read-only grid of outputs in ``[0, 1]``. Always float32: a :ref:`quantised
 interpolates the same float volume. The buffer is write-protected; derive a new
 LUT with :ref:`replace() <class-LUT-replace>` instead of mutating it.
 
+.. rst-class:: classref-property
+
+**raw** → ``numpy.ndarray`` / **raw_top** → ``int | None``
+
+The compact stored buffer (``uint8`` / ``uint16`` / float32) and the highest
+integer code in it (``2 ** bit_depth - 1``). File writers save ``raw`` so a
+8-bit LUT occupies a quarter of float32 on disk; ``raw / raw_top == volume``.
+
 ----
 
 .. _class-LUT-name:
