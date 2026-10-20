@@ -137,12 +137,8 @@ Methods
      - :ref:`cost <class-LUT-cost>`
    * - :ref:`LUT <class-LUT>`
      - :ref:`resample <class-LUT-resample>`
-   * - ``float``
-     - :ref:`max_delta <class-LUT-max_delta>`
-   * - ``ndarray``
-     - :ref:`delta_from_identity <class-LUT-delta_from_identity>`
-   * - ``(ndarray, ndarray)``
-     - :ref:`tone_curve <class-LUT-tone_curve>`
+   * - :ref:`LUT <class-LUT>`
+     - :ref:`to_lut <class-LUT-to_lut>`
    * - :ref:`LUT <class-LUT>`
      - :ref:`to_bit_depth <class-LUT-to_bit_depth>`
    * - :ref:`LUT <class-LUT>`
@@ -367,11 +363,11 @@ out). ``interp`` selects the :ref:`interpolation scheme <sec-schemes>` and
 
 .. rst-class:: classref-method
 
-**LUT.cost** ``(scheme: str = "multilinear") -> Cost``
+**LUT.cost** ``() -> Cost``
 
 The static cost of the transform: stored params, :ref:`nbytes
-<class-LUT-nbytes>`, and reads-per-pixel for ``scheme``. See :ref:`Cost
-<class-Cost>`.
+<class-LUT-nbytes>`, and reads-per-pixel (multilinear, the standard
+scheme). See :ref:`Cost <class-Cost>`.
 
 ----
 
@@ -388,38 +384,15 @@ axis. Returns ``self`` when it is already a uniform ``grid_size`` grid. See
 
 ----
 
-.. _class-LUT-max_delta:
+.. _class-LUT-to_lut:
 
 .. rst-class:: classref-method
 
-**LUT.max_delta** ``() -> float``
+**LUT.to_lut** ``(grid_size: int | None = None, **_kw) -> LUT``
 
-The largest per-channel change the LUT makes at any grid point, measured
-against the identity on the same grid. ``0.0`` means the LUT is (numerically)
-the identity.
-
-----
-
-.. _class-LUT-delta_from_identity:
-
-.. rst-class:: classref-method
-
-**LUT.delta_from_identity** ``() -> ndarray``
-
-``volume`` minus the identity LUT on the same grid -- the per-grid-point change
-the LUT applies. The shape is the LUT's ``volume`` shape.
-
-----
-
-.. _class-LUT-tone_curve:
-
-.. rst-class:: classref-method
-
-**LUT.tone_curve** ``(n: int = 33) -> (ndarray, ndarray)``
-
-The LUT's output sampled along the grey diagonal ``(t, t, ..., t)``: returns
-``(t, curve)`` where ``t`` has shape ``(n,)`` and ``curve`` shape ``(n, 3)``.
-Useful for plotting a LUT's lift/gamma/gain behaviour.
+The transform as one dense `LUT`: for a `LUT` this is ``self`` (or
+``self.resample(grid_size)``). This is the protocol method the conformance
+tests and evaluation harnesses use to reduce any transform to a dense LUT.
 
 ----
 

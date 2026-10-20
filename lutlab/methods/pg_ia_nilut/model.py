@@ -283,11 +283,11 @@ class IANILUTTransform:
             self.model.train(was_training)
         return out if is_t else out.cpu().numpy()
 
-    def resample(self, grid_size: int | None = None, *, weights=None, **_kw) -> LUT:
+    def to_lut(self, grid_size: int | None = None, *, weights=None, **_kw) -> LUT:
         """The filter as one `LUT` for global parameters (per-image predicted ones need an image)."""
         w = weights if weights is not None else self.w
         if w is None:
-            raise ValueError("resample() needs global parameters: pass weights= or bind w=")
+            raise ValueError("to_lut() needs global parameters: pass weights= or bind w=")
         return self.model.filters.lut(w, grid_size or self.N, name=self.name)
 
     def cost(self) -> Cost:

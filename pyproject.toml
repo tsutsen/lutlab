@@ -16,9 +16,8 @@ fast = ["numba>=0.57"]                       # multi-threaded CPU kernels
 torch = ["torch>=2.0"]                       # differentiable / GPU kernels, learned methods
 clip = ["torch>=2.0", "open_clip_torch>=2.20"]   # CLIP scorer for PG-IA-NILUT
 metrics = ["scikit-image>=0.20"]             # CIEDE2000, SSIM
-fit = ["scipy>=1.9"]                         # segmented-LUT fitting
 eval = ["scikit-image>=0.20", "imageio>=2.30"]
-all = ["numba>=0.57", "torch>=2.0", "open_clip_torch>=2.20", "scikit-image>=0.20", "scipy>=1.9", "imageio>=2.30"]
+all = ["numba>=0.57", "torch>=2.0", "open_clip_torch>=2.20", "scikit-image>=0.20", "imageio>=2.30"]
 dev = ["pytest>=7", "scipy>=1.9", "scikit-image>=0.20", "imageio>=2.30", "numba>=0.57"]
 
 [tool.hatch.build.targets.wheel]

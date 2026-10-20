@@ -37,28 +37,28 @@ def test_mixture_blends_and_bakes(rng):
     assert np.abs(mix(x, context=w) - expect).max() < 1e-6
     per_px = np.stack([np.full(50, 0.3), np.full(50, 0.7)], -1).astype(np.float32)
     assert np.abs(mix(x, context=per_px) - expect).max() < 1e-6
-    assert np.abs(mix.resample(9, weights=w)(x) - expect).max() < 1e-5      # trilinear is linear in the grid
+    assert np.abs(mix.to_lut(9, weights=w)(x) - expect).max() < 1e-5         # trilinear is linear in the grid
     assert mix.cost().meta["n_luts"] == 2
     with pytest.raises(ValueError, match="needs weights"):
         mix(x)
     with pytest.raises(ValueError, match="3 channels for 2 LUTs"):
         mix(x, context=np.ones((50, 3), np.float32))
     with pytest.raises(ValueError, match="same grid"):
-        LUTMixture([a, testing.random_lut(7, 3)]).resample(9, weights=w)
+        LUTMixture([a, testing.random_lut(7, 3)]).to_lut(9, weights=w)
 
 
 # ---- conformance (and that conformance is not vacuous) ------------------------- #
 _RECT = [np.linspace(0, 1, s) ** 1.5 for s in (5, 7, 9)]
 _CASES = {
     "identity": (lambda: LUT.identity(9), {}),
-    "random": (lambda: testing.random_lut(11, 3, seed=1), {"resample_tol": 1e-5}),
+    "random": (lambda: testing.random_lut(11, 3, seed=1), {"to_lut_tol": 1e-5}),
     # rectilinear -> uniform resampling has an inherent gap; 33 keeps it small
     "rectilinear": (lambda: testing.random_lut((5, 7, 9), 3, seed=1, axes=_RECT),
-                    {"resample_grid_size": 33, "resample_tol": 5e-2}),
+                    {"to_lut_grid_size": 33, "to_lut_tol": 5e-2}),
     "4d": (lambda: testing.random_lut(5, 4, seed=1), {}),
     "mixture": (lambda: LUTMixture([testing.random_lut(9, 3, seed=1), testing.random_lut(9, 3, seed=2)],
                                    weights=np.array([0.5, 0.5], np.float32)),
-                {"resample_grid_size": 9, "resample_tol": 1e-5}),
+                {"to_lut_grid_size": 9, "to_lut_tol": 1e-5}),
     "method-identity": (lambda: methods.build("identity"), {}),
 }
 
@@ -69,10 +69,10 @@ def test_conformance_passes(case):
     assert testing.conformance(make(), **kw) == []
 
 
-def test_resample_gap_is_real_when_grids_do_not_align():
+def test_to_lut_gap_is_real_when_grids_do_not_align():
     lut = testing.random_lut(11, 3, seed=1)
-    assert testing.conformance(lut, resample_grid_size=17, resample_tol=1e-5) != []      # 11 -> 17: cells misalign
-    assert testing.conformance(lut, resample_grid_size=21, resample_tol=1e-5) == []      # 21 = 2*10+1: aligned
+    assert testing.conformance(lut, to_lut_grid_size=17, to_lut_tol=1e-5) != []      # 11 -> 17: cells misalign
+    assert testing.conformance(lut, to_lut_grid_size=21, to_lut_tol=1e-5) == []      # 21 = 2*10+1: aligned
 
 
 class _Broken:
@@ -92,7 +92,7 @@ class _Broken:
             return x + self.rng.random(x.shape).astype(np.float32) * 0.01
         return x
 
-    def resample(self, grid_size=17, **kw):
+    def to_lut(self, grid_size=17, **kw):
         return LUT.identity(grid_size) if self.mode != "badresample" else LUT.identity(grid_size).replace(volume=LUT.identity(grid_size).volume * 0.5)
 
     def cost(self):
@@ -100,7 +100,7 @@ class _Broken:
 
 
 @pytest.mark.parametrize("mode,needle", [("shape", "output shape"), ("nan", "non-finite"),
-                                          ("random", "non-deterministic"), ("badresample", "resample(")])
+                                          ("random", "non-deterministic"), ("badresample", "to_lut(")])
 def test_conformance_catches_broken_transforms(mode, needle):
     fails = testing.conformance(_Broken(mode))
     assert any(needle in f for f in fails), fails

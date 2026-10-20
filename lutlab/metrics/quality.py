@@ -6,7 +6,8 @@ import numpy as np
 from .._deps import require
 from ..transforms.lut import LUT
 
-__all__ = ["e00", "de76", "psnr", "ssim", "lpips", "accuracy", "lut_space_accuracy"]
+__all__ = ["e00", "de76", "psnr", "ssim", "lpips", "accuracy",
+           "lut_space_accuracy", "tone_curve"]
 
 # linear-sRGB (Rec.709 primaries, D65) -> XYZ
 _LIN_TO_XYZ = np.array([[0.4124564, 0.3575761, 0.1804375],
@@ -88,10 +89,22 @@ def accuracy(out, ref, *, space: str = "srgb") -> dict[str, float]:
 
 
 def lut_space_accuracy(lut, ref_lut=None, *, space: str | None = None) -> dict[str, float]:
-    """How far ``lut`` sits from ``ref_lut`` (default: identity), on the grid."""
+    """How far ``lut`` sits from ``ref_lut`` (default: identity), on the grid.
+
+    ``max_channel`` is the largest per-channel change the LUT makes at any grid
+    point (``delta_from_identity`` in 0.2).
+    """
     ref = ref_lut if ref_lut is not None else LUT.identity(sizes=lut.sizes, axes=lut.axes)
     if lut.sizes != ref.sizes:
         raise ValueError(f"grids differ: {lut.sizes} vs {ref.sizes}; resample first")
     d = e00(lut.volume.reshape(-1, 3), ref.volume.reshape(-1, 3), space=space or lut.space)
     return {"e00_mean": float(d.mean()), "e00_max": float(d.max()),
             "max_channel": float(np.abs(lut.volume - ref.volume).max())}
+
+
+def tone_curve(lut, n: int = 33) -> tuple[np.ndarray, np.ndarray]:
+    """Output of ``lut`` along the grey diagonal ``(t, ..., t)``: returns ``(t, curve[n, 3])``."""
+    from ..kernels.dispatch import interpolate
+    t = np.linspace(0.0, 1.0, n, dtype=np.float32)
+    x = np.repeat(t[:, None], lut.n_in, axis=1)
+    return t, interpolate(lut.volume, x, axes=lut.axes, scheme="multilinear")

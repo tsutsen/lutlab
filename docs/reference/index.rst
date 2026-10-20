@@ -6,8 +6,10 @@ Reference
 The complete lutlab API, in two groups: the **classes** (one page each) and the
 **modules** that make up the library.
 
-A *transform* is any object that is callable and has ``resample``, ``cost``,
-``name`` and ``n_in`` -- there is no base class. :ref:`LUT <class-LUT>` is the
+A *transform* is any object that is callable and has ``cost``, ``name`` and
+``n_in`` -- there is no base class. Transforms that can be frozen to a dense
+LUT also provide ``to_lut`` (used by the conformance tests and evaluation
+harnesses). :ref:`LUT <class-LUT>` is the
 dense implementation, :ref:`LUTMixture <class-LUTMixture>` a weighted blend, and
 :ref:`methods <mod-methods>` builds the learned ones. Everything
 satisfying this shape can be applied, benchmarked and

@@ -60,15 +60,16 @@ class LUTMixture:
                     reads_per_px=sum(2 ** l.n_in for l in self.luts),
                     meta={"n_luts": self.n_luts})
 
-    def resample(self, grid_size: int = 17, *, weights=None, **_kw) -> LUT:
-        """Collapse to one LUT using GLOBAL weights ``(n_luts,)`` (exact when grids match)."""
+    def to_lut(self, grid_size: int | None = None, *, weights=None, **_kw) -> LUT:
+        """The mixture as one dense LUT, blended with GLOBAL weights ``(n_luts,)``
+        (exact when the LUTs share a grid). ``grid_size`` resamples the result."""
         w = weights if weights is not None else self.weights
         if w is None or np.asarray(w).ndim != 1:
-            raise ValueError("resample() needs global weights of shape (n_luts,)")
+            raise ValueError("to_lut() needs global weights of shape (n_luts,)")
         first = self.luts[0]
         for l in self.luts[1:]:
             if l.sizes != first.sizes or not _same_axes(l, first):
-                raise ValueError("resample() needs all LUTs on the same grid")
+                raise ValueError("to_lut() needs all LUTs on the same grid")
         stack = np.stack([l.volume for l in self.luts])
         blended = np.tensordot(np.asarray(w, np.float32), stack, axes=1)
         return first.replace(volume=blended, name=self.name).resample(grid_size)

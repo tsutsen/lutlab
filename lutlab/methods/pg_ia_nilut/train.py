@@ -68,7 +68,7 @@ class ImagePairDataset(Dataset):
     """``(index, X, T)`` with X, T float32 ``(H, W, 3)`` tensors in [0, 1] at a fixed size.
 
     ``pairs`` is anything indexable yielding ``(input, target, ...)`` numpy images, e.g.
-    ``lutlab.evaluation.PairFolder`` or a list.
+    ``lutlab.metrics.PairFolder`` or a list.
     """
 
     def __init__(self, pairs: Sequence, size: tuple[int, int] = (256, 256)) -> None:

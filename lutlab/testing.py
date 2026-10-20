@@ -61,19 +61,20 @@ def check_backends(lut: LUT, *, n: int = 500, seed: int = 0, atol: float = 1e-5)
     return out
 
 
-def conformance(transform, *, n: int = 256, seed: int = 0, resample_grid_size: int | None = None,
-                resample_tol: float = 1e-4, resample_kw: dict | None = None,
-                skip_resample: bool = False) -> list[str]:
+def conformance(transform, *, n: int = 256, seed: int = 0, to_lut_grid_size: int | None = None,
+                to_lut_tol: float = 1e-4, to_lut_kw: dict | None = None,
+                skip_to_lut: bool = False) -> list[str]:
     """Checks every `transform` must pass. Returns failure messages ([] = pass).
 
     * output is ``(..., 3)``, finite, and leading shapes are preserved
     * calls are deterministic
-    * ``resample(grid_size)`` reproduces the native output within `resample_tol`.
-      `resample_grid_size` defaults to the transform's own grid size (exact for a LUT)
-      and 17 otherwise.
-      Resampling onto a grid whose cells do not align with the native one has an
-      inherent gap (and so do neural methods): set `resample_tol` to the accepted gap.
-      ``skip_resample`` disables the check; context-dependent transforms skip it.
+    * ``to_lut(grid_size)`` (the frozen dense LUT) reproduces the native output
+      within `to_lut_tol`. `to_lut_grid_size` defaults to the transform's own grid
+      size (exact for a LUT on its own grid) and 17 otherwise. Freezing onto a
+      grid whose cells do not align with the native one has an inherent gap (and
+      so do neural methods): set `to_lut_tol` to the accepted gap. Transforms
+      without ``to_lut`` (context-dependent ones) skip the check; so does
+      ``skip_to_lut``.
     """
     fails: list[str] = []
     rng = np.random.default_rng(seed)
@@ -99,20 +100,20 @@ def conformance(transform, *, n: int = 256, seed: int = 0, resample_grid_size: i
             fails.append(f"leading shape not preserved: got {y4.shape}")
     except Exception as e:
         fails.append(f"multi-dim input failed: {type(e).__name__}: {e}")
-    if not skip_resample and ctx is None:
+    if not skip_to_lut and ctx is None and hasattr(transform, "to_lut"):
         try:
-            grid_size = resample_grid_size
+            grid_size = to_lut_grid_size
             if grid_size is None:
                 try:
                     grid_size = int(transform.grid_size)
                 except Exception:
                     grid_size = 17
-            baked = transform.resample(grid_size, **(resample_kw or {}))
+            baked = transform.to_lut(grid_size, **(to_lut_kw or {}))
             gap = float(np.abs(np.asarray(baked(x)) - y).max())
-            if gap > resample_tol:
-                fails.append(f"resample({grid_size}) differs from native by {gap:.2e} > {resample_tol:.0e}")
+            if gap > to_lut_tol:
+                fails.append(f"to_lut({grid_size}) differs from native by {gap:.2e} > {to_lut_tol:.0e}")
         except Exception as e:
-            fails.append(f"resample failed: {type(e).__name__}: {e}")
+            fails.append(f"to_lut failed: {type(e).__name__}: {e}")
     return fails
 
 

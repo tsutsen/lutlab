@@ -10,6 +10,7 @@ import numpy as np
 from .. import __version__
 from .._arrays import is_torch
 from ..kernels.dispatch import apply
+from ..transforms.base import ColorTransform
 from . import quality
 from .timing import apply_speed
 
@@ -69,12 +70,12 @@ def evaluate(transform, pairs: Iterable, *, metrics: tuple[str, ...] = ("psnr", 
     res["timing"] = None
     if timing is not None and first is not None:
         res["timing"] = apply_speed(transform, first[0], context=first[1], **timing, **kw)
-    res["cost"] = transform.cost().as_dict() if hasattr(transform, "cost") else None
+    res["cost"] = transform.cost().as_dict() if isinstance(transform, ColorTransform) else None
     return res
 
 
 def _is_transform(obj) -> bool:
-    return hasattr(obj, "resample") and hasattr(obj, "n_in")
+    return isinstance(obj, ColorTransform)
 
 
 def run_matrix(methods: Mapping[str, object], tasks: Mapping[str, Iterable], *,

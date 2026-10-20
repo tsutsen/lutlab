@@ -80,12 +80,13 @@ way to confirm the backends agree.
 
 .. rst-class:: classref-method
 
-**conformance** ``(transform, *, n: int = 256, seed: int = 0, resample_grid_size: int | None = None, resample_tol: float = 1e-4, resample_kw: dict | None = None, skip_resample: bool = False) -> list[str]``
+**conformance** ``(transform, *, n: int = 256, seed: int = 0, to_lut_grid_size: int | None = None, to_lut_tol: float = 1e-4, to_lut_kw: dict | None = None, skip_to_lut: bool = False) -> list[str]``
 
 Run the full suite of checks every transform must pass (output shape,
-determinism, finite values, and that ``resample`` reproduces the native output
-within ``resample_tol``). Returns a list of failure messages -- ``[]`` means the
-transform conforms.
+determinism, finite values, and -- when the transform provides ``to_lut`` --
+that it reproduces the native output within ``to_lut_tol``; context-dependent
+transforms that have no ``to_lut`` skip that check). Returns a list of failure
+messages -- ``[]`` means the transform conforms.
 
 ----
 

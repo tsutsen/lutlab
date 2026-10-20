@@ -20,6 +20,7 @@ from __future__ import annotations
 import numpy as np
 
 from .._arrays import is_torch
+from ..transforms.lut import LUT
 from ._registry import Request, select
 from .schemes import canonical_scheme
 
@@ -144,7 +145,7 @@ def apply(lut, x, *, context=None, interp: str = "multilinear", backend: str = "
     ``context`` supplies extra input channels (e.g. the 4th axis of a 4D LUT).
     """
     x = _as_array(x)
-    if hasattr(lut, "volume") and hasattr(lut, "sizes"):
+    if isinstance(lut, LUT):
         volume, axes, (lo, hi) = lut.volume, lut.axes, lut.domain
         default_domain = lut.has_default_domain
     elif isinstance(lut, np.ndarray) or is_torch(lut):

@@ -15,8 +15,8 @@ with weights of shape ``(n_luts,)`` (global) or ``(..., n_luts)`` (per-pixel
 masks). Weights come in through ``context=`` at call time, or are bound at
 construction with ``weights=``. It is the segmented-grade generalisation of a
 single :ref:`LUT <class-LUT>`: instead of one volume, it holds several and mixes
-them. Collapse the blend to one dense LUT with :ref:`resample()
-<class-LUTMixture-resample>`.
+them. Collapse the blend to one dense LUT with :ref:`to_lut()
+<class-LUTMixture-to_lut>`.
 
 .. rst-class:: classref-introduction-group
 
@@ -81,7 +81,7 @@ Methods
    * - :ref:`Cost <class-Cost>`
      - :ref:`cost <class-LUTMixture-cost>`
    * - :ref:`LUT <class-LUT>`
-     - :ref:`resample <class-LUTMixture-resample>`
+     - :ref:`to_lut <class-LUTMixture-to_lut>`
 
 ----
 
@@ -182,11 +182,11 @@ The sum of the constituent LUTs' costs, with ``meta["n_luts"]`` set to
 
 ----
 
-.. _class-LUTMixture-resample:
+.. _class-LUTMixture-to_lut:
 
 .. rst-class:: classref-method
 
-**LUTMixture.resample** ``(grid_size: int = 17, *, weights: ndarray | None = None) -> LUT``
+**LUTMixture.to_lut** ``(grid_size: int | None = None, *, weights: ndarray | None = None, **_kw) -> LUT``
 
 Collapse the blend to one dense LUT on a uniform ``grid_size`` grid, using global
 ``(n_luts,)`` weights (exact when the LUTs share a grid).

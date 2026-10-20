@@ -18,7 +18,7 @@ def test_identity_applies_to_itself_all_schemes(rng):
 def test_identity_shapes(n_in):
     lut = LUT.identity(5, n_in)
     assert lut.shape == (5,) * n_in + (3,) and lut.n_in == n_in
-    assert lut.max_delta() == 0.0
+    assert np.abs(lut.volume - LUT.identity(5, n_in).volume).max() == 0.0
 
 
 def test_identity_2d_has_no_canonical_form():
@@ -103,17 +103,18 @@ def test_cost():
     lut = LUT.identity(17)
     c = lut.cost()
     assert c.params == 17 ** 3 * 3 and c.nbytes == c.params * 4 and c.reads_per_px == 8
-    assert lut.cost("tetrahedral").reads_per_px == 4 and lut.cost("nearest").reads_per_px == 1
 
 
 def test_transform_contract():
     # ColorTransform is a runtime-checkable Protocol: both transforms satisfy it.
     assert isinstance(LUT.identity(5), lutlab.ColorTransform)
     assert isinstance(lutlab.LUTMixture([LUT.identity(5)]), lutlab.ColorTransform)
-    # It is the duck type: callable with resample/cost/name/n_in.
+    # The contract: callable with cost/name/n_in; to_lut freezes it to a dense LUT.
     for t in (LUT.identity(5), lutlab.LUTMixture([LUT.identity(5)])):
-        for attr in ("__call__", "resample", "cost", "name", "n_in"):
+        for attr in ("__call__", "cost", "name", "n_in", "to_lut"):
             assert hasattr(t, attr)
+    i5 = LUT.identity(5)
+    assert i5.to_lut(5) is i5
 
 
 def test_bit_depth_quantizes_and_converts():

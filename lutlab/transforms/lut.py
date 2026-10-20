@@ -98,9 +98,9 @@ class LUT:
         if not np.isfinite(v).all():
             raise ValueError("LUT contains non-finite values")
         if bit_depth is not None:
-            top = (2 ** int(bit_depth)) - 1
-            v = np.clip(np.rint(v * top), 0, top).astype(
-                np.uint8 if int(bit_depth) <= 8 else np.uint16)
+            n = int(bit_depth)
+            top = (2 ** n) - 1
+            v = (quantize(v, n) * top).astype(np.uint8 if n <= 8 else np.uint16)
             scale = float(top)
         else:
             scale = 1.0
@@ -185,10 +185,10 @@ class LUT:
         return apply(self, x, context=context, interp=interp, backend=backend,
                      device=device, check_finite=check_finite)
 
-    def cost(self, scheme: str = "multilinear") -> Cost:
-        reads = {"nearest": 1, "tetrahedral": 4}.get(scheme, 2 ** self.n_in)
+    def cost(self) -> Cost:
+        """Static cost; ``reads_per_px`` assumes multilinear (2**n_in corners)."""
         return Cost(params=int(self._volume.size), nbytes=self.nbytes,
-                    reads_per_px=reads, meta={"sizes": list(self._sizes)})
+                    reads_per_px=2 ** self.n_in, meta={"sizes": list(self._sizes)})
 
     def resample(self, grid_size: int | None = None, **_kw) -> "LUT":
         """A dense `LUT` resampled onto a uniform ``grid_size``-per-axis grid (self if already that).
@@ -199,22 +199,9 @@ class LUT:
             return self
         return _resample(self, grid_size)
 
-    # -- comparison / inspection ------------------------------------------ #
-    def delta_from_identity(self) -> np.ndarray:
-        """``volume`` minus the identity on the same grid: what the LUT changes."""
-        ref = LUT.identity(sizes=self.sizes, axes=self._axes)
-        return self.volume - ref.volume
-
-    def max_delta(self) -> float:
-        """Largest per-channel change the LUT makes at any grid point."""
-        return float(np.abs(self.delta_from_identity()).max())
-
-    def tone_curve(self, n: int = 33) -> tuple[np.ndarray, np.ndarray]:
-        """Output along the grey diagonal ``(t, ..., t)``: returns ``(t, curve[n, 3])``."""
-        from ..kernels.dispatch import interpolate
-        t = np.linspace(0.0, 1.0, n, dtype=np.float32)
-        x = np.repeat(t[:, None], self.n_in, axis=1)
-        return t, interpolate(self.volume, x, axes=self._axes, scheme="multilinear")
+    def to_lut(self, grid_size: int | None = None, **_kw) -> "LUT":
+        """The transform as one dense `LUT`: self, or resampled onto ``grid_size``."""
+        return self.resample(grid_size)
 
     # -- derivation -------------------------------------------------------- #
     def to_bit_depth(self, n: int) -> "LUT":
@@ -246,16 +233,6 @@ class LUT:
         return self._sizes == other._sizes and bool(
             np.allclose(self.volume, other.volume, atol=atol, rtol=0))
 
-    # -- files ------------------------------------------------------------ #
-    def save(self, path, **kw) -> None:
-        from ..formats import save
-        save(self, path, **kw)
-
-    @classmethod
-    def load(cls, path, **kw) -> "LUT":
-        from ..formats import load
-        return load(path, **kw)
-
     @classmethod
     def identity(cls, grid_size: int = 17, n_in: int = 3, *, sizes=None, axes=None,
                  name: str = "identity", space: str = "srgb") -> "LUT":
@@ -278,3 +255,13 @@ class LUT:
         grids = np.meshgrid(*pos, indexing="ij")
         chans = [grids[0]] * 3 if n_in == 1 else grids[:3]
         return LUT(np.stack(chans, axis=-1), name=name, axes=axes, space=space)
+
+    # -- files ------------------------------------------------------------ #
+    def save(self, path, **kw) -> None:
+        from ..formats import save
+        save(self, path, **kw)
+
+    @classmethod
+    def load(cls, path, **kw) -> "LUT":
+        from ..formats import load
+        return load(path, **kw)

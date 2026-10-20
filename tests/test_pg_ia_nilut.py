@@ -122,8 +122,8 @@ def test_numpy_path_through_lutlab_kernels_equals_torch_path(E):
 def test_transform_conformance(E):
     w = E.weights(exposure=0.4, contrast=0.2)
     m = pg.PGIANILUT(E)
-    assert testing.conformance(m.transform(w), resample_grid_size=33, resample_tol=1e-5) == []      # exact: same N=33 LUT
-    assert testing.conformance(m.transform(w, bypass=False), resample_grid_size=33, resample_tol=1e-3) == []
+    assert testing.conformance(m.transform(w), to_lut_grid_size=33, to_lut_tol=1e-5) == []      # exact: same N=33 LUT
+    assert testing.conformance(m.transform(w, bypass=False), to_lut_grid_size=33, to_lut_tol=1e-3) == []
 
 
 def test_weight_sources_and_errors(E):
@@ -141,7 +141,7 @@ def test_weight_sources_and_errors(E):
     with pytest.raises(ValueError, match="need an image"):
         t(img.reshape(-1, 3))
     with pytest.raises(ValueError, match="global parameters"):
-        t.resample()
+        t.to_lut()
     assert t.cost().meta["predictor"] == m2.num_parameters()["predictor"] and t.cost().reads_per_px == 8
     assert m2.transform(bypass=False).cost().reads_per_px is None
 
@@ -261,7 +261,7 @@ def test_registry_entry_points(tmp_path):
     t = methods.build("pg_ia_nilut")                          # untrained: w = 0 -> identity
     img = np.random.default_rng(0).random((20, 20, 3)).astype(np.float32)
     assert np.abs(t(img) - img).max() < 1e-5
-    assert testing.conformance(t, resample_grid_size=33, resample_tol=1e-5) == []
+    assert testing.conformance(t, to_lut_grid_size=33, to_lut_tol=1e-5) == []
     m = pg.PGIANILUT(pg.IANILUT(), pg.CnnPredictor())
     m.save(tmp_path / "c.pt")
     adaptive = methods.build("pg_ia_nilut", checkpoint=tmp_path / "c.pt")

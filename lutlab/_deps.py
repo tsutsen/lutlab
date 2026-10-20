@@ -8,7 +8,6 @@ __all__ = ["have", "require"]
 
 _HINTS = {
     "skimage": "pip install lutlab[metrics]",
-    "scipy": "pip install lutlab[fit]",
     "imageio": "pip install lutlab[eval]",
     "torch": "pip install lutlab[torch] (or a ROCm/CUDA build of torch)",
     "numba": "pip install lutlab[fast]",

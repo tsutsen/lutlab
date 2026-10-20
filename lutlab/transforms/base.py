@@ -34,18 +34,22 @@ class ColorTransform(Protocol):
     ``__call__`` takes ``x`` of shape ``(..., C)`` in the transform's input
     domain and returns ``(..., 3)``. ``context`` carries extra per-pixel or
     global inputs (mixture weights, 4D-LUT context, style codes).
-    Implementations should accept and ignore unknown keyword arguments such as
-    ``interp=`` and ``backend=``.
+    ``cost()`` is a static property (no arguments). Implementations should
+    accept and ignore unknown keyword arguments such as ``interp=`` and
+    ``backend=``.
+
+    Optional capability: ``to_lut(...)`` freezes the transform into one dense
+    `LUT` (exact or approximate) -- a mixture blends its LUTs, a learned method
+    bakes its parameters. Not part of the contract: context-dependent
+    transforms that need an image to define themselves have none. The
+    behavioural checks live in :func:`lutlab.testing.conformance`.
 
     A structural `Protocol`, not a base class: `LUT` and `LUTMixture` satisfy it
-    without inheriting from it. The behavioural checks live in
-    :func:`lutlab.testing.conformance`.
+    without inheriting from it.
     """
     name: str
     n_in: int
 
     def __call__(self, x, *, context=None, **kw): ...
 
-    def resample(self, *args, **kw) -> "ColorTransform": ...
-
-    def cost(self, *args, **kw) -> Cost: ...
+    def cost(self) -> Cost: ...

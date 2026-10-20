@@ -10,7 +10,7 @@ pytest.importorskip("skimage")
 def test_resample_keeps_identity_and_metadata():
     lut = LUT.identity(17)
     r = lut.resample(33)
-    assert r.sizes == (33,) * 3 and r.max_delta() < 1e-6
+    assert r.sizes == (33,) * 3 and metrics.lut_space_accuracy(r)["max_channel"] < 1e-6
     meta = testing.random_lut(5, 3, seed=1).replace(domain=(0, 2), space="linear")
     r2 = meta.resample((7, 8, 9))
     assert r2.sizes == (7, 8, 9) and r2.domain == meta.domain and r2.space == "linear"
@@ -28,10 +28,10 @@ def test_resample_from_rectilinear_matches_direct_lookup(rng):
 
 def test_delta_and_tone_curve():
     for lut in (LUT.identity(5), LUT.identity(5, 4), LUT.identity(sizes=(4, 5, 6), axes=[np.linspace(0, 1, s) ** 2 for s in (4, 5, 6)])):
-        assert lut.max_delta() == 0.0
-    t, curve = LUT.identity(9).tone_curve(n=17)
+        assert metrics.lut_space_accuracy(lut)["max_channel"] == 0.0
+    t, curve = metrics.tone_curve(LUT.identity(9), n=17)
     assert np.allclose(curve, t[:, None], atol=1e-6)
-    assert testing.random_lut(5, 3, seed=1).max_delta() > 0
+    assert metrics.lut_space_accuracy(testing.random_lut(5, 3, seed=1))["max_channel"] > 0
 
 
 def test_e00_psnr_ssim_basics(rng):
