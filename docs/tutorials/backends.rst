@@ -53,7 +53,8 @@ fused
 .. _backend-fused:
 
 An opt-in, hand-written HIP kernel compiled into lutlab for the common case: a
-**cubic, uniform, trilinear** 3-D LUT on a GPU. It is not selected by ``auto``;
+**cubic, uniform** 3-D LUT on a GPU, with nearest, multilinear and
+tetrahedral interpolation. It is not selected by ``auto``;
 you must ask for it by name. It needs ``torch`` + a CUDA/ROCm device (and the
 matching nvcc/hipcc toolchain). It is *not* differentiable.
 
@@ -64,8 +65,8 @@ matching nvcc/hipcc toolchain). It is *not* differentiable.
 .. note::
 
    The fused kernel works on the raw GPU buffer end to end. The ``torch``
-   backend is the general one -- use it when you need a non-cubic grid, a
-   different scheme, or a gradient.
+   backend is the general one -- use it when you need a non-cubic grid or a
+   gradient.
 
 Adding a backend
 ----------------

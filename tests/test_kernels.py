@@ -201,6 +201,23 @@ def test_torch_in_torch_out(torch, rng):
     assert np.abs(y.numpy() - lut(x.numpy(), backend="numpy")).max() < 1e-5
 
 
+def test_fused_schemes_match_numpy(torch, rng):
+    if not torch.cuda.is_available():
+        pytest.skip("fused needs a CUDA/ROCm device")
+    lut = testing.random_lut(33, 3, seed=13)
+    x = rng.random((10000, 3)).astype(np.float32)
+    xt = torch.as_tensor(x, device="cuda")
+    try:
+        for scheme in ("nearest", "multilinear", "tetrahedral"):
+            ref = lut(x, interp=scheme, backend="numpy")
+            got = lut(xt, interp=scheme, backend="fused").cpu().numpy()
+            assert np.abs(got - ref).max() < 1e-5, scheme
+    except RuntimeError as e:
+        # Optional backend: a CUDA/ROCm torch can be present without a working
+        # nvcc/hipcc + Python headers (e.g. a minimal local venv).
+        pytest.skip(f"fused kernel toolchain unavailable: {str(e)[:160]}")
+
+
 def test_torch_gradients(torch, rng):
     D = 4
     volume = torch.tensor(rng.random((D, D, D, 3)), dtype=torch.float64, requires_grad=True)

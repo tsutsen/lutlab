@@ -74,5 +74,5 @@ Which one to use
      - parity check
      - ~= trilinear on CPU
 
-The :ref:`fused <backend-fused>` GPU backend supports trilinear only; the
-``numpy``, ``numba`` and ``torch`` backends support all three.
+The :ref:`fused <backend-fused>` GPU backend supports all three schemes; the
+``numpy``, ``numba`` and ``torch`` backends also support all three.

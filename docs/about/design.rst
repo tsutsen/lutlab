@@ -64,7 +64,7 @@ can handle; ``backend="auto"`` picks the best available one for the data.
      - CUDA / ROCm
      - cubic, uniform
      - 3
-     - trilinear
+     - nearest / trilinear / tetrahedral
      - no
 
 The ``numpy`` backend is the **oracle**: every other backend is tested against it

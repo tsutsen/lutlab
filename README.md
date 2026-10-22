@@ -56,7 +56,7 @@ available on your machine.
 | `numpy` (reference) | CPU | any | any | no |
 | `numba` | CPU, multi-threaded | uniform | any | no |
 | `torch` | CPU / CUDA / ROCm / MPS | any | any | yes |
-| `fused` (opt-in) | CUDA / ROCm | cubic uniform, trilinear | 3 | no |
+| `fused` (opt-in) | CUDA / ROCm | cubic uniform, nearest/trilinear/tetrahedral | 3 | no |
 
 ## Included methods
 
