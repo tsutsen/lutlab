@@ -10,9 +10,13 @@ Fidelity (see each module for the exact loss):
 - ``.npy``    LOSSLESS raw compact grid, no metadata: uint8 (8-bit), uint16 (16-bit)
   or float32 (10/12-bit and unquantised -- a bare uint16 file cannot carry
   ``bit_depth``; use ``.json`` for those).
-- ``.png``    Hald CLUT (ImageMagick ``hald:N``). LOSSY: quantised to the LUT's
+- ``.png``    Hald CLUT, in either pixel layout: the canonical one (ImageMagick
+  ``hald:N`` -- level N gives an N**3 px side, N**2 values per axis, one pixel
+  per node) or the lutlab variant (a ceil(sqrt(L**3)) grid of cell x cell
+  pixel blocks). Choose with ``layout=``; the levels/cell size are the
+  "sizes" of the pattern. LOSSY: quantised to the LUT's
   ``bit_depth`` (8- or 16-bit PNG; max error 1/(2**bit_depth-1)) of a render onto
-  the standard Hald pattern. Needs OpenCV.
+  the Hald pattern. Needs OpenCV.
 """
 from __future__ import annotations
 

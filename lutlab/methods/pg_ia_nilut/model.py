@@ -6,6 +6,10 @@ Interpretable Image Enhancement", ACM MM 2024 (arXiv 2408.11055).
 Eq. (3)   y = x + e([x, sort(x), w]) - e([x, sort(x), 0])
 Eq. (5)   LUT bypassing: O = E_hat(I, w) on an N^3 grid I, then y = Lookup(x, {I, O}).
 
+The concatenation order of the filter input follows the official implementation
+(``[x, w, sort(x)]``), so that the released checkpoints reproduce it exactly;
+Eq. (3) of the paper lists the same three terms in a different order.
+
 Colour values are channel-LAST ``(..., 3)`` in [0, 1] throughout, like the rest of lutlab.
 """
 from __future__ import annotations
@@ -30,9 +34,13 @@ def _n_params(m: nn.Module) -> int:
 
 
 class IANILUT(nn.Module):
-    """The filter bank E: ``(rgb, sort(rgb), w) -> rgb`` with identity at ``w = 0``.
+    """The filter bank E: ``(rgb, w, sort(rgb)) -> rgb`` with identity at ``w = 0``.
 
-    Paper settings: 5 fully connected layers, 256 hidden units, tanh, J = 5 parameters.
+    Paper settings: 5 fully connected layers, 256 hidden units, J = 5 parameters.
+    The activations and the order of the concatenated input follow the official
+    implementation (ReLU after the first layer, tanh after the rest; the filter
+    input is ``[x, w, sort(x)]``), so the released checkpoints load and reproduce
+    it exactly.
 
     Note: Eq. (3) subtracts ``e(., 0)``, so the last layer's bias cancels exactly and never receives a
     gradient (3 of the 201,219 parameters are inert by construction; kept to match the paper's count).
@@ -54,13 +62,19 @@ class IANILUT(nn.Module):
         for i in range(n_layers):
             layers.append(nn.Linear(dims[i], dims[i + 1]))
             if i < n_layers - 1:
-                layers.append(nn.Tanh())
+                # official IA_NILUT: ReLU after the first layer, tanh after the others
+                layers.append(nn.ReLU() if i == 0 else nn.Tanh())
         self.mlp = nn.Sequential(*layers)
 
     # -- Eq. (3) -------------------------------------------------------------------- #
     @staticmethod
     def _features(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
-        return torch.cat([x, torch.sort(x, dim=-1).values, w], dim=-1)
+        """Filter input ``[x, w, sort(x)]`` -- the order used by the official code.
+
+        The released checkpoints are trained with exactly this concatenation, so
+        the order is part of the model definition, not a formatting detail.
+        """
+        return torch.cat([x, w, torch.sort(x, dim=-1).values], dim=-1)
 
     @staticmethod
     def _expand(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
@@ -146,13 +160,17 @@ class CnnPredictor(nn.Module):
                 layers.append(nn.InstanceNorm2d(o, affine=True))
             return layers
 
+        # official TPAMIBackbone: 5 stride-2 blocks (Conv + LeakyReLU + InstanceNorm;
+        # the last block has no norm), dropout, global pooling to 2x2 -> 512 features
+        # -> Linear(512, J)
         self.net = nn.Sequential(*block(3, 16), *block(16, 32), *block(32, 64), *block(64, 128),
                                  *block(128, 128, norm=False), nn.Dropout(p=0.5),
-                                 nn.AdaptiveAvgPool2d(1), nn.Conv2d(128, n_params, 1))
+                                 nn.AdaptiveAvgPool2d(2), nn.Flatten(1))
+        self.fc = nn.Linear(128 * 4, n_params)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """x ``(B, H, W, 3)`` in [0, 1] -> w ``(B, J)``."""
-        return self.net(_to_nchw(x, self.size)).flatten(1)
+        return self.fc(self.net(_to_nchw(x, self.size)))
 
 
 class ResNetPredictor(nn.Module):
@@ -226,6 +244,44 @@ class PGIANILUT(nn.Module):
         m = cls(IANILUT(c["n_params"], c["hidden"], c["n_layers"], tuple(c["names"])), pred)
         m.load_state_dict(ck["state"])
         return m.eval()
+
+    @classmethod
+    def from_official(cls, path, map_location="cpu") -> "PGIANILUT":
+        """Load a checkpoint released with the official implementation.
+
+        The official repository (github.com/satoshi-kosugi/PG-IA-NILUT) publishes
+        FiveK/PPR10K checkpoints whose state dict is keyed
+        ``PG_IA_NILUT.net.<i>`` (the filter MLP) and ``backbone.<i>.<j>`` /
+        ``weights_generator.weights_generator.*`` (the image-adaptive predictor).
+        This method remaps those keys onto lutlab's modules and returns the model.
+        """
+        ck = torch.load(path, map_location=map_location, weights_only=False)
+        sd = ck.get("state_dict", ck)
+        n_params = int(sd["weights_generator.weights_generator.weight"].shape[0])
+        is_resnet = any(k.startswith("backbone.net.") for k in sd)
+        pred = ResNetPredictor(n_params) if is_resnet else CnnPredictor(n_params)
+        model = cls(IANILUT(n_params), pred)
+        new: dict[str, torch.Tensor] = {}
+        for k, v in sd.items():
+            if k.startswith("PG_IA_NILUT.net."):
+                new["filters.mlp." + k.split("PG_IA_NILUT.net.")[1]] = v
+            elif k.startswith("backbone.net."):
+                # official ResNet backbone -> torchvision resnet18 parameter names
+                new["predictor.net." + k.split("backbone.net.")[1]] = v
+            elif k.startswith("backbone."):
+                # official: backbone.<block>.<layer> (layer 0 = conv, 2 = InstanceNorm)
+                # lutlab:    a flat Sequential (3 modules per block: conv, LeakyReLU, norm)
+                blk, layer, param = k.split("backbone.")[1].split(".")
+                new[f"predictor.net.{3 * int(blk) + int(layer)}.{param}"] = v
+            elif k.startswith("weights_generator.weights_generator."):
+                new["predictor.fc." + k.split("weights_generator.weights_generator.")[1]] = v
+        missing, unexpected = model.load_state_dict(new, strict=False)
+        missing = [m for m in missing if not m.startswith("predictor.fc.")]
+        if missing or unexpected:
+            raise RuntimeError(f"official checkpoint mismatch: missing={missing} "
+                               f"unexpected={unexpected}")
+        return model.eval()
+
 
 
 class IANILUTTransform:

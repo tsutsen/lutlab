@@ -2,7 +2,10 @@
 
     info                    versions, backend availability, registered methods
     selftest                quick sanity checks (backend agreement, round-trips)
-    convert SRC DST         convert between .cube / .json / .npy
+    convert SRC DST         convert between .cube / .json / .npy / Hald PNG
+                            --hald-layout {lutlab,canonical}  (Hald PNG only)
+                            --hald-level N                    (canonical layout)
+                            --hald-cell C                     (lutlab variant)
 """
 from __future__ import annotations
 
@@ -26,12 +29,38 @@ def _info() -> int:
 
 
 def _convert(args: list[str]) -> int:
-    if len(args) != 2:
-        print("usage: python -m lutlab convert SRC DST")
+    positional = [a for a in args if not a.startswith("--")]
+    opts = [a for a in args if a.startswith("--")]
+    if len(positional) != 2:
+        print("usage: python -m lutlab convert SRC DST [--hald-layout ...]")
         return 2
+    layout = "lutlab"
+    level = cell = None
+    for o in opts:
+        key, _, val = o.partition("=")
+        if key == "--hald-layout":
+            layout = val
+        elif key == "--hald-level":
+            level = int(val)
+        elif key == "--hald-cell":
+            cell = int(val)
     import lutlab
-    lutlab.LUT.load(args[0]).save(args[1])
-    print(f"wrote {args[1]}")
+    from pathlib import Path
+    read_kw, write_kw = {}, {}
+    if Path(positional[0]).suffix.lower() == ".png":
+        read_kw["layout"] = layout
+    if Path(positional[1]).suffix.lower() == ".png":
+        if layout == "canonical":
+            write_kw = dict(layout="canonical", level=level)
+        else:
+            write_kw = dict(cell=cell if cell is not None else 1)
+    try:
+        lut = lutlab.LUT.load(positional[0], **read_kw)
+    except (ValueError, TypeError) as e:
+        print(f"cannot read {positional[0]}: {e}")
+        return 1
+    lut.save(positional[1], **write_kw)
+    print(f"wrote {positional[1]}")
     return 0
 
 

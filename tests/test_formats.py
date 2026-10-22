@@ -147,6 +147,68 @@ def test_hald_roundtrip_by_bit_depth(tmp_path):
         assert np.abs(back.volume - lut.volume).max() <= 1.0 / top + 1e-5
 
 
+def test_hald_canonical_layout_is_the_standard_one():
+    """Level L -> L**3 px per side, L**2 values per axis, one pixel per node."""
+    from lutlab.formats import hald
+    assert hald.canonical_level(64) == 4
+    assert hald.canonical_level(512) == 8
+    assert hald.canonical_level(4096) == 16
+    with pytest.raises(ValueError):
+        hald.canonical_level(500)
+    r, g, b = hald.canonical_nodes(4)
+    assert r.shape == (64, 64)
+    # every (r, g, b) combination appears exactly once
+    seen = set(zip(r.ravel().tolist(), g.ravel().tolist(), b.ravel().tolist()))
+    assert len(seen) == 16 ** 3
+    # the documented mapping: r = x % C, g = (y % L) * L + x // C, b = y // L
+    x, y, c, level = 37, 21, 16, 4
+    assert r[y, x] == x % c
+    assert g[y, x] == (y % level) * level + x // c
+    assert b[y, x] == y // level
+
+
+def test_hald_canonical_roundtrip(tmp_path):
+    pytest.importorskip("cv2")
+    from lutlab.formats import hald
+    for level, per_axis in ((4, 16), (6, 36)):
+        lut = testing.random_lut(per_axis, 3, seed=3, name="canon")
+        p = tmp_path / f"canon{level}.png"
+        lut.save(p, layout="canonical", level=level)
+        from PIL import Image
+        assert Image.open(p).size == (level ** 3, level ** 3)
+        back = LUT.load(p, layout="canonical")
+        assert back.sizes == (per_axis, per_axis, per_axis)
+        assert np.abs(back.volume - lut.volume).max() <= 1.0 / 255 + 1e-5
+    # the identity written as a canonical Hald is the Hald ramp
+    ident = LUT.identity(grid_size=16)
+    p = tmp_path / "ident.png"
+    ident.save(p, layout="canonical", level=4)
+    pattern = hald.canonical_pattern(4)
+    from PIL import Image
+    arr = np.asarray(Image.open(p).convert("RGB")).astype(np.float32) / 255.0
+    assert np.abs(arr - pattern).max() <= 1.0 / 255 + 1e-3
+
+
+def test_hald_canonical_is_not_read_as_the_variant(tmp_path):
+    pytest.importorskip("cv2")
+    lut = LUT.identity(grid_size=16)
+    p = tmp_path / "canon.png"
+    lut.save(p, layout="canonical", level=4)
+    with pytest.raises(ValueError):
+        LUT.load(p)          # the variant layout does not fit a 64x64 canonical image
+
+
+def test_hald_unknown_layout(tmp_path):
+    pytest.importorskip("cv2")
+    lut = LUT.identity(grid_size=16)
+    p = tmp_path / "x.png"
+    with pytest.raises(ValueError):
+        lut.save(p, layout="nonsense")
+    lut.save(p, layout="canonical", level=4)
+    with pytest.raises(ValueError):
+        LUT.load(p, layout="nonsense")
+
+
 def test_convert_cli(tmp_path):
     from lutlab.__main__ import main
     testing.random_lut(5, 3, seed=1).save(tmp_path / "a.cube")

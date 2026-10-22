@@ -62,7 +62,7 @@ Submodules
      - Adobe Photoshop / 3D LUT ``.cube`` text format; decimal precision follows the LUT's ``bit_depth`` (8 -> 3 digits, ..., 16 -> 5).
    * - ``hald``
      - ``.png``
-     - Hald CLUT pattern (8-bit or 16-bit PNG); round-trips ``bit_depth``.
+     - Hald CLUT pattern (8-bit or 16-bit PNG), in the canonical layout (ImageMagick ``hald:N``) or the lutlab variant; round-trips ``bit_depth``.
    * - ``lutjson``
      - ``.json``
      - Lossless JSON container: the compact grid (uint8 / uint16 / float32) plus ``bit_depth``, axes / domain / space.
