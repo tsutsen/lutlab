@@ -25,19 +25,52 @@ def _info() -> int:
     print("\nmethods:")
     for n, why in lutlab.methods.available().items():
         print(f"  {n:<14} {'available' if why is None else 'unavailable (' + why + ')'}")
+    _gpu_info()
     return 0
 
 
+def _gpu_info() -> None:
+    """Print what torch can see, when torch is installed."""
+    try:
+        import torch
+    except Exception as exc:                      # noqa: BLE001
+        print(f"\ngpu: torch not importable ({type(exc).__name__}: {exc})")
+        return
+    build = ("HIP/ROCm " + torch.version.hip) if torch.version.hip else (
+            ("CUDA " + torch.version.cuda) if torch.version.cuda else "CPU-only")
+    print(f"\ngpu: torch {torch.__version__} ({build})")
+    if not torch.cuda.is_available():
+        print("     no accelerator visible")
+        return
+    total, free = torch.cuda.mem_get_info(0)
+    print(f"     {torch.cuda.get_device_name(0)}  "
+          f"({free / 2**30:.2f} / {total / 2**30:.2f} GiB free)")
+
+
 def _convert(args: list[str]) -> int:
-    positional = [a for a in args if not a.startswith("--")]
-    opts = [a for a in args if a.startswith("--")]
+    positional: list[str] = []
+    opts: list[tuple[str, str]] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("--"):
+            key, sep, val = a.partition("=")
+            if not sep:
+                if i + 1 >= len(args):
+                    print(f"missing value for {key}")
+                    return 2
+                val = args[i + 1]
+                i += 1
+            opts.append((key, val))
+        else:
+            positional.append(a)
+        i += 1
     if len(positional) != 2:
         print("usage: python -m lutlab convert SRC DST [--hald-layout ...]")
         return 2
     layout = "lutlab"
     level = cell = None
-    for o in opts:
-        key, _, val = o.partition("=")
+    for key, val in opts:
         if key == "--hald-layout":
             layout = val
         elif key == "--hald-level":
@@ -49,6 +82,10 @@ def _convert(args: list[str]) -> int:
     read_kw, write_kw = {}, {}
     if Path(positional[0]).suffix.lower() == ".png":
         read_kw["layout"] = layout
+        if level is not None:
+            read_kw["levels"] = level
+        if cell is not None:
+            read_kw["cell"] = cell
     if Path(positional[1]).suffix.lower() == ".png":
         if layout == "canonical":
             write_kw = dict(layout="canonical", level=level)
