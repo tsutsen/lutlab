@@ -82,9 +82,11 @@ def _resample(lut: "LUT", size) -> "LUT":
 class LUT:
     """A colour lookup table. Immutable: use `replace()` to derive variants.
 
-    ``bit_depth`` (optional) quantises the values to ``2**bit_depth`` levels -- a
-    quality/size/speed lever; ``None`` (default) keeps full float precision. Convert later
-    with :meth:`to_bit_depth`.
+    ``bit_depth`` (optional, 1..32) quantises the values to ``2**bit_depth`` levels --
+    a quality/size/speed lever; ``None`` (default) keeps full float precision. Up to
+    16 bits the codes are stored in uint8/uint16; above 16 bits they are stored as
+    float32 (32 bits is the cap, i.e. float32 precision). Convert later with
+    :meth:`to_bit_depth`.
     """
 
     def __init__(self, volume, name: str = "lut", *, axes=None, domain=None,
@@ -99,9 +101,15 @@ class LUT:
             raise ValueError("LUT contains non-finite values")
         if bit_depth is not None:
             n = int(bit_depth)
+            if not 1 <= n <= 32:
+                raise ValueError(f"bit_depth must be between 1 and 32, got {n}")
             top = (2 ** n) - 1
-            v = (quantize(v, n) * top).astype(np.uint8 if n <= 8 else np.uint16)
-            scale = float(top)
+            if n <= 16:
+                v = (quantize(v, n) * top).astype(np.uint8 if n <= 8 else np.uint16)
+                scale = float(top)
+            else:
+                v = quantize(v, n)                 # float32: no compact integer fits
+                scale = 1.0
         else:
             scale = 1.0
         v.flags.writeable = False
@@ -118,7 +126,7 @@ class LUT:
     @property
     def volume(self) -> np.ndarray:
         """Read-only float32 ``[0, 1]`` volume (upcast from the stored dtype)."""
-        if self._scale == 1.0:
+        if self._volume.dtype == np.float32:
             return self._volume
         v = self._volume.astype(np.float32) / self._scale
         v.flags.writeable = False
@@ -134,19 +142,23 @@ class LUT:
 
     @property
     def raw(self) -> np.ndarray:
-        """Compact stored volume (read-only): uint8 (8-bit), uint16 (10/12/16-bit)
-        or float32 (no quantisation). ``volume`` is the normalised float32 view."""
+        """Compact stored volume (read-only): uint8 (1..8-bit), uint16 (9..16-bit)
+        or float32 (above 16 bits, or no quantisation). ``volume`` is the normalised
+        float32 view."""
         return self._volume
 
     @property
     def raw_top(self) -> int | None:
-        """Highest integer code in :attr:`raw` (``2**bit_depth - 1``), or ``None``.
-        Divide ``raw`` by ``raw_top`` to get ``volume``."""
-        return None if self._bit_depth is None else (2 ** self._bit_depth) - 1
+        """Highest integer code in :attr:`raw` (``2**bit_depth - 1``), or ``None``
+        when ``raw`` is float32. Divide an integer ``raw`` by ``raw_top`` to get
+        ``volume``."""
+        if self._bit_depth is None or self._volume.dtype.kind != "u":
+            return None
+        return (2 ** self._bit_depth) - 1
 
     @property
     def bit_depth(self) -> int | None:
-        """Value quantisation (``2**bit_depth`` levels), or ``None`` for full float."""
+        """Value quantisation (``2**bit_depth`` levels, 1..32), or ``None`` for full float."""
         return self._bit_depth
 
     @property
@@ -217,14 +229,15 @@ class LUT:
 
     # -- derivation -------------------------------------------------------- #
     def to_bit_depth(self, n: int) -> "LUT":
-        """A copy with values quantised to ``n`` bits.
+        """A copy with values quantised to ``n`` bits (1..32).
 
         Up-converting beyond the current depth adds no precision (the values only occupy
-        ``2**bit_depth`` levels) and warns; down-converting is a lossy round.
+        ``2**bit_depth`` levels) and warns; down-converting is a lossy round. Above 16
+        bits the values are stored as float32.
         """
         n = int(n)
-        if n < 1:
-            raise ValueError(f"bit_depth must be >= 1, got {n}")
+        if not 1 <= n <= 32:
+            raise ValueError(f"bit_depth must be between 1 and 32, got {n}")
         if self._bit_depth is not None and n > self._bit_depth:
             warnings.warn(f"up-converting {self._bit_depth}-bit -> {n}-bit adds no "
                           f"precision (only {2 ** self._bit_depth} levels present)",
@@ -242,8 +255,16 @@ class LUT:
                    bit_depth=self._bit_depth if bit_depth is None else bit_depth)
 
     def allclose(self, other: "LUT", atol: float = 1e-6) -> bool:
-        return self._sizes == other._sizes and bool(
-            np.allclose(self.volume, other.volume, atol=atol, rtol=0))
+        """True when sizes, axes, domain and values all match within ``atol``."""
+        if self._sizes != other._sizes or self.domain != other.domain:
+            return False
+        if self.is_uniform != other.is_uniform:
+            return False
+        if self._axes is not None and not all(
+                np.allclose(a, b, atol=atol, rtol=0)
+                for a, b in zip(self._axes, other._axes)):
+            return False
+        return bool(np.allclose(self.volume, other.volume, atol=atol, rtol=0))
 
     @classmethod
     def identity(cls, grid_size: int = 17, n_in: int = 3, *, sizes=None, axes=None,

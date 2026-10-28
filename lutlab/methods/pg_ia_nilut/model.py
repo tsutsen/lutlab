@@ -19,6 +19,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from ..._deps import require
 from ...kernels.dispatch import interpolate
 from ...transforms.base import Cost
 from ...transforms.lut import LUT
@@ -178,7 +179,7 @@ class ResNetPredictor(nn.Module):
 
     def __init__(self, n_params: int = 5, size: int = 256, pretrained: bool = False) -> None:
         super().__init__()
-        from torchvision.models import resnet18
+        resnet18 = require("torchvision.models").resnet18
         self.size = size
         self.net = resnet18(weights="IMAGENET1K_V1" if pretrained else None)
         self.net.fc = nn.Linear(self.net.fc.in_features, n_params)
@@ -246,7 +247,7 @@ class PGIANILUT(nn.Module):
         return m.eval()
 
     @classmethod
-    def from_official(cls, path, map_location="cpu") -> "PGIANILUT":
+    def from_official(cls, path, map_location="cpu", *, trusted: bool = False) -> "PGIANILUT":
         """Load a checkpoint released with the official implementation.
 
         The official repository (github.com/satoshi-kosugi/PG-IA-NILUT) publishes
@@ -254,8 +255,20 @@ class PGIANILUT(nn.Module):
         ``PG_IA_NILUT.net.<i>`` (the filter MLP) and ``backbone.<i>.<j>`` /
         ``weights_generator.weights_generator.*`` (the image-adaptive predictor).
         This method remaps those keys onto lutlab's modules and returns the model.
+
+        **Security:** the safe loader is used unless ``trusted=True``. Only pass
+        ``trusted=True`` for a checkpoint you trust; that mode can execute code
+        stored in the file.
         """
-        ck = torch.load(path, map_location=map_location, weights_only=False)
+        try:
+            ck = torch.load(path, map_location=map_location, weights_only=True)
+        except Exception as e:
+            if not trusted:
+                raise RuntimeError(
+                    "cannot load this checkpoint with weights_only=True; pass "
+                    "trusted=True only if you trust the file (it may execute code)"
+                ) from e
+            ck = torch.load(path, map_location=map_location, weights_only=False)
         sd = ck.get("state_dict", ck)
         n_params = int(sd["weights_generator.weights_generator.weight"].shape[0])
         is_resnet = any(k.startswith("backbone.net.") for k in sd)
@@ -292,6 +305,8 @@ class IANILUTTransform:
     shape ``(H, W, 3)`` or ``(B, H, W, 3)`` -- the predictor F. With ``bypass`` (default) the MLP is
     baked into an N^3 lutlab `LUT` and numpy images use lutlab's CPU kernels; extra keyword
     arguments (``interp=``, ``backend=``) are forwarded to that lookup.
+    Torch inputs respect the ambient grad mode (call under ``torch.no_grad()`` for inference).
+    Numpy inputs are always inference-only because they go through `LUT`.
     """
     n_in = 3
 
@@ -306,7 +321,7 @@ class IANILUTTransform:
 
     def _w_for(self, x: torch.Tensor, context):
         if context is not None:
-            return torch.as_tensor(np.asarray(context, np.float32)).to(self._dev())
+            return torch.as_tensor(context, dtype=torch.float32, device=self._dev())
         if self.w is not None:
             return self.w.to(self._dev())
         if self.model.predictor is None:
@@ -315,26 +330,27 @@ class IANILUTTransform:
             raise ValueError("predicted parameters need an image (H, W, 3) or batch (B, H, W, 3)")
         return self.model.predict_weights(x if x.ndim == 4 else x[None])
 
-    @torch.no_grad()
     def __call__(self, x, *, context=None, **kw):
         is_t = torch.is_tensor(x)
+        grad = is_t and torch.is_grad_enabled()
         xt = x if is_t else torch.as_tensor(np.asarray(x, np.float32))
         xt = xt.to(self._dev(), torch.float32)
         was_training = self.model.training
         self.model.eval()
         try:
-            w = self._w_for(xt, context)
-            if w.ndim == 2 and w.shape[0] == 1 and xt.ndim == 3:
-                w = w[0]
-            if self.bypass and not is_t and w.ndim == 1:                # numpy -> lutlab kernels
-                return self.model.filters.lut(w, self.N)(np.asarray(x, np.float32), **kw)
-            if self.bypass:
-                out = self.model.filters.enhance(xt, w, bypass=True, N=self.N)
-            elif w.ndim == 1:
-                out = torch.cat([self.model.filters(c, w) for c in xt.reshape(-1, 3).split(_CHUNK)])
-                out = out.reshape(xt.shape)
-            else:
-                out = self.model.filters(xt, w)
+            with torch.set_grad_enabled(grad):
+                w = self._w_for(xt, context)
+                if w.ndim == 2 and w.shape[0] == 1 and xt.ndim == 3:
+                    w = w[0]
+                if self.bypass and not is_t and w.ndim == 1:            # numpy -> lutlab kernels
+                    return self.model.filters.lut(w, self.N)(np.asarray(x, np.float32), **kw)
+                if self.bypass:
+                    out = self.model.filters.enhance(xt, w, bypass=True, N=self.N)
+                elif w.ndim == 1:
+                    out = torch.cat([self.model.filters(c, w) for c in xt.reshape(-1, 3).split(_CHUNK)])
+                    out = out.reshape(xt.shape)
+                else:
+                    out = self.model.filters(xt, w)
         finally:
             self.model.train(was_training)
         return out if is_t else out.cpu().numpy()
@@ -345,6 +361,10 @@ class IANILUTTransform:
         if w is None:
             raise ValueError("to_lut() needs global parameters: pass weights= or bind w=")
         return self.model.filters.lut(w, grid_size or self.N, name=self.name)
+
+    def resample(self, grid_size: int | None = None, **kw) -> LUT:
+        """The same as :meth:`to_lut` (needs global parameters)."""
+        return self.to_lut(grid_size, **kw)
 
     def cost(self) -> Cost:
         n = self.model.num_parameters()

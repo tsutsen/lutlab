@@ -215,3 +215,74 @@ def test_convert_cli(tmp_path):
     assert main(["convert", str(tmp_path / "a.cube"), str(tmp_path / "a.json")]) == 0
     assert LUT.load(tmp_path / "a.json").shape == (5, 5, 5, 3)
     assert main(["convert"]) == 2
+
+
+def test_npy_low_bit_depths_keep_their_values(tmp_path):
+    base = testing.random_lut(5, 3, seed=4)
+    for bd in (1, 2, 4, 7):
+        lut = base.to_bit_depth(bd)
+        p = tmp_path / f"low{bd}.npy"
+        lut.save(p)
+        back = LUT.load(p)
+        assert back.bit_depth is None
+        assert np.array_equal(back.volume, lut.volume)
+
+
+def test_json_and_npy_32bit_roundtrip(tmp_path):
+    lut = testing.random_lut(5, 3, seed=4).to_bit_depth(32)
+    pj = tmp_path / "l32.json"
+    lut.save(pj)
+    obj = json.loads(pj.read_text())
+    assert obj["bit_depth"] == 32 and obj["dtype"] == "<f4"
+    back = LUT.load(pj)
+    assert back.bit_depth == 32 and np.array_equal(back.volume, lut.volume)
+    pn = tmp_path / "l32.npy"
+    lut.save(pn)
+    back = LUT.load(pn)
+    assert back.bit_depth is None and np.array_equal(back.volume, lut.volume)
+
+
+def test_hald_rejects_custom_domain_and_rectilinear(tmp_path):
+    domain = testing.random_lut(10, 3, seed=1).replace(domain=(0, 2))
+    with pytest.raises(ValueError, match="domain"):
+        domain.save(tmp_path / "domain.png")
+    axes = [np.linspace(0, 1, 10) ** 1.5] * 3
+    rect = testing.random_lut(10, 3, seed=1, axes=axes)
+    with pytest.raises(ValueError, match="uniform"):
+        rect.save(tmp_path / "axes.png")
+
+
+def test_hald_png_write_failure_raises(tmp_path):
+    pytest.importorskip("cv2")
+    lut = testing.random_lut(5, 3, seed=1)
+    with pytest.raises(OSError, match="cannot write"):
+        lut.save(tmp_path / "missing" / "x.png")
+
+
+def test_hald_reads_an_alpha_png(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    from lutlab.formats import hald
+    pattern = hald.canonical_pattern(2)                   # 8x8 image, 4^3 table
+    rgba = np.dstack([pattern[..., ::-1], np.ones(pattern.shape[:2], np.float32)])
+    p = tmp_path / "alpha.png"
+    cv2.imwrite(str(p), np.clip(np.rint(rgba * 255), 0, 255).astype(np.uint8))
+    back = LUT.load(p, layout="canonical")
+    assert back.sizes == (4, 4, 4)
+    assert np.abs(back.volume - LUT.identity(4).volume).max() <= 1 / 255 + 1e-6
+
+
+def test_convert_cli_accepts_space_options_and_cell(tmp_path):
+    pytest.importorskip("cv2")
+    from lutlab.__main__ import main
+    lut = testing.random_lut(5, 3, seed=1)
+    src = tmp_path / "a.json"
+    lut.save(src)
+    dst = tmp_path / "a.png"
+    assert main(["convert", str(src), str(dst),
+                 "--hald-layout", "canonical", "--hald-level", "4"]) == 0
+    assert LUT.load(dst, layout="canonical").sizes == (16, 16, 16)
+    vpng = tmp_path / "v.png"
+    lut.save(vpng, cell=2)
+    back = tmp_path / "v.json"
+    assert main(["convert", str(vpng), str(back), "--hald-cell", "2"]) == 0
+    assert LUT.load(back).sizes == (5, 5, 5)

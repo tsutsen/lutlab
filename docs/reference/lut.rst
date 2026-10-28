@@ -21,10 +21,11 @@ in-1)``. Inputs outside the LUT's :ref:`domain <class-LUT-domain>` are rescaled
 to the unit cube before lookup. See :ref:`Applying a LUT <doc-applying>` for the
 full layout.
 
-Values are stored as float32 by default. Pass ``bit_depth=`` to quantise to
-``2 ** bit_depth`` levels, which shrinks the object (a quality/size/speed lever)
-and stores it in a compact ``uint8`` / ``uint16`` buffer. See :ref:`Bit depth
-and compact storage <doc-bitdepth>`.
+Values are stored as float32 by default. Pass ``bit_depth=`` (1..32) to quantise
+to ``2 ** bit_depth`` levels, which shrinks the object (a quality/size/speed
+lever) and stores it in a compact ``uint8`` / ``uint16`` buffer. Above 16 bits
+the values stay float32 (32 is the cap). See :ref:`Bit depth and compact storage
+<doc-bitdepth>`.
 
 A LUT is immutable: derive variants with :ref:`replace() <class-LUT-replace>` or
 :ref:`to_bit_depth() <class-LUT-to_bit_depth>`, and resample onto a new grid with
@@ -172,9 +173,10 @@ LUT with :ref:`replace() <class-LUT-replace>` instead of mutating it.
 
 **raw** → ``numpy.ndarray`` / **raw_top** → ``int | None``
 
-The compact stored buffer (``uint8`` / ``uint16`` / float32) and the highest
-integer code in it (``2 ** bit_depth - 1``). File writers save ``raw`` so a
-8-bit LUT occupies a quarter of float32 on disk; ``raw / raw_top == volume``.
+The compact stored buffer (``uint8`` for 1..8-bit, ``uint16`` for 9..16-bit,
+float32 above 16 bits or unquantised) and the highest integer code in it
+(``2 ** bit_depth - 1``). ``raw_top`` is ``None`` when ``raw`` is float32. An
+integer ``raw`` satisfies ``raw / raw_top == volume``.
 
 ----
 
@@ -228,9 +230,9 @@ grid).
 
 **bit_depth** → ``int | None``
 
-The value quantisation: the stored values occupy ``2 ** bit_depth`` levels.
-``None`` means full float32 precision. See :ref:`Bit depth and compact storage
-<doc-bitdepth>`.
+The value quantisation (1..32): the stored values occupy ``2 ** bit_depth``
+levels. ``None`` means full float32 precision. Above 16 bits the storage is
+float32. See :ref:`Bit depth and compact storage <doc-bitdepth>`.
 
 ----
 
@@ -250,9 +252,9 @@ The value quantisation: the stored values occupy ``2 ** bit_depth`` levels.
 
 **nbytes** → ``int``
 
-Bytes actually stored. Compact for a quantised LUT (``uint8`` for
-``bit_depth <= 8``, ``uint16`` for ``> 8``); see :ref:`Bit depth and compact
-storage <doc-bitdepth>`.
+Bytes actually stored. Compact for 1..16-bit LUTs (``uint8`` for
+``bit_depth <= 8``, ``uint16`` for 9..16); above 16 bits the buffer is float32.
+See :ref:`Bit depth and compact storage <doc-bitdepth>`.
 
 ----
 
@@ -324,7 +326,8 @@ Method descriptions
 **LUT** ``(volume: ndarray, name: str = "lut", *, axes: tuple[ndarray] | None = None, domain: tuple[tuple, tuple] | None = None, space: str = "srgb", bit_depth: int | None = None) -> LUT``
 
 Create a LUT from a ``(D0, ..., Dn-1, 3)`` volume. ``volume`` is copied and made
-read-only; ``bit_depth`` quantises the values and switches to compact storage.
+read-only; ``bit_depth`` (1..32) quantises the values. 1..16 bits switch to a
+compact integer buffer; above 16 bits the values stay float32.
 
 .. code-block:: python
 
@@ -410,9 +413,9 @@ tests and evaluation harnesses use to reduce any transform to a dense LUT.
 
 **LUT.to_bit_depth** ``(n: int) -> LUT``
 
-A copy quantised to ``n`` bits. Down-converting is a lossy round; up-converting
-beyond the current depth adds no precision and warns. See :ref:`Bit depth and
-compact storage <doc-bitdepth>`.
+A copy quantised to ``n`` bits (1..32). Down-converting is a lossy round;
+up-converting beyond the current depth adds no precision and warns. See
+:ref:`Bit depth and compact storage <doc-bitdepth>`.
 
 ----
 
@@ -422,8 +425,11 @@ compact storage <doc-bitdepth>`.
 
 **LUT.replace** ``(*, volume: ndarray | None = None, name: str | None = None, axes="keep", domain="keep", space: str | None = None, bit_depth: int | None = None) -> LUT``
 
-Return a copy with the given fields changed; ``"keep"`` / ``None`` leaves a
-field as-is. This is the only way to "edit" a LUT, because LUTs are immutable.
+Return a copy with the given fields changed. ``axes="keep"`` / ``domain="keep"``
+leave those fields as-is, while ``axes=None`` / ``domain=None`` reset them to a
+uniform grid / the default ``[0, 1]`` domain. ``name=None``, ``space=None`` and
+``bit_depth=None`` keep the current value. This is the only way to "edit" a LUT,
+because LUTs are immutable.
 
 ----
 
@@ -433,7 +439,8 @@ field as-is. This is the only way to "edit" a LUT, because LUTs are immutable.
 
 **LUT.allclose** ``(other: LUT, atol: float = 1e-06) -> bool``
 
-``True`` when two LUTs share a grid and their values match within ``atol``.
+``True`` when two LUTs have the same sizes, axes, domain and values within
+``atol``.
 
 ----
 

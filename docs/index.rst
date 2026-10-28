@@ -2,10 +2,9 @@ lutlab
 ======
 
 ``lutlab`` is a small, self-contained library for colour LUTs: load and save
-LUTs, apply them on CPU or GPU with several interpolation schemes, extract a
-LUT back from a rendered image, and measure the results under one evaluation
-harness. One implementation per operation, so the numbers are directly
-comparable.
+LUTs, apply them on CPU or GPU with several interpolation schemes, and measure
+the results under one evaluation harness. One implementation per operation, so
+the numbers are directly comparable.
 
 If you are new here, start with the :doc:`quickstart
 <getting_started/quickstart>` to go from nothing to a graded image in a couple

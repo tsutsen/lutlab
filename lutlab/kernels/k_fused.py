@@ -1,10 +1,11 @@
 """k_fused -- single-pass HIP kernels for cubic uniform 3-D LUTs (opt-in).
 
-Native to lutlab: the HIP source below is compiled on first use via
-``torch.utils.cpp_extension.load_inline``. Opt-in only (never chosen by
-``backend="auto"``): it needs torch + a CUDA/ROCm device (and the matching
-nvcc/hipcc toolchain), supports cubic uniform 3-D grids, and has no backward
-pass.  The kernels are written for a *segmented* apply (S LUTs masked per
+Native to lutlab: the HIP/CUDA source below is compiled on first use via
+``torch.utils.cpp_extension.load_inline`` (nvcc on CUDA, hipcc on ROCm). Opt-in
+only (never chosen by ``backend="auto"``): it needs torch + a CUDA/ROCm device
+(and the matching compiler/toolchain), supports cubic uniform 3-D grids, and
+has no backward pass. The device check in ``_available`` does not prove that a
+compiler is installed; a missing toolchain fails on first use.  The kernels are written for a *segmented* apply (S LUTs masked per
 pixel); the lutlab backend drives them with ``S=1`` for a plain cubic LUT.
 
 Schemes:
@@ -24,7 +25,12 @@ import importlib.util
 from ._registry import Backend, Request, register
 
 _CUDA_SRC = r"""
+// HIP on ROCm, the CUDA runtime on a CUDA-only toolchain.
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIP_PLATFORM_NVIDIA__) || defined(__HIPCC__)
 #include <hip/hip_runtime.h>
+#else
+#include <cuda_runtime.h>
+#endif
 
 __device__ __forceinline__ int clamp_int(int v, int lo, int hi)
 {

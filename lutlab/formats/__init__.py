@@ -3,20 +3,22 @@
 Fidelity (see each module for the exact loss):
 
 - ``.cube``   3D cubic, uniform grid. Text; decimal precision follows the LUT's
-  ``bit_depth`` (8 -> 3 digits, ..., 16 -> 5), so a quantised LUT round-trips within
-  half a grid step; unquantised uses 6 decimals (~1e-6 max error).
+  ``bit_depth`` (8 -> 3 digits, ..., 16 -> 5, above 16 -> 9), so a quantised LUT
+  round-trips within half a grid step; unquantised uses 6 decimals (~1e-6 max
+  error). The ``bit_depth`` tag itself is not stored.
 - ``.json``   LOSSLESS: the LUT's compact grid (uint8/uint16/float32) plus explicit
   ``bit_depth``; any n_in, per-axis sizes, rectilinear axes, domain, space.
-- ``.npy``    LOSSLESS raw compact grid, no metadata: uint8 (8-bit), uint16 (16-bit)
-  or float32 (10/12-bit and unquantised -- a bare uint16 file cannot carry
-  ``bit_depth``; use ``.json`` for those).
+- ``.npy``    Values without metadata: uint8 (8-bit), uint16 (16-bit) or float32
+  (every other depth and unquantised). A bare uint8/uint16/float32 file cannot
+  carry ``bit_depth``, so the tag is lost on read; use ``.json`` for it.
 - ``.png``    Hald CLUT, in either pixel layout: the canonical one (ImageMagick
   ``hald:N`` -- level N gives an N**3 px side, N**2 values per axis, one pixel
   per node) or the lutlab variant (a ceil(sqrt(L**3)) grid of cell x cell
   pixel blocks). Choose with ``layout=``; the levels/cell size are the
-  "sizes" of the pattern. LOSSY: quantised to the LUT's
-  ``bit_depth`` (8- or 16-bit PNG; max error 1/(2**bit_depth-1)) of a render onto
-  the Hald pattern. Needs OpenCV.
+  "sizes" of the pattern. LOSSY: the render is quantised to an 8- or 16-bit
+  PNG, so only the 8/16-bit tag is recovered; custom domains and non-uniform
+  grids are rejected because the pattern stores neither. Needs OpenCV
+  (``pip install "lutlab[png]"``).
 """
 from __future__ import annotations
 

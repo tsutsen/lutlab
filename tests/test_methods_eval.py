@@ -161,6 +161,148 @@ def test_pairfolder(tmp_path, rng):
     assert len(pf) == 2 and pf.names == ["a", "b"] and len(list(pf)) == 2        # re-iterable
     assert pairs[0][0].dtype == np.float32 and 0.0 <= pairs[0][0].max() <= 1.0
     assert metrics.evaluate(LUT.identity(5), pf)["n"] == 2
+    cached = metrics.PairFolder(tmp_path, cache=1)
+    first = cached[0]
+    assert cached[0] is first                                  # decoded pair reused
     (tmp_path / "e1").mkdir(), (tmp_path / "e1" / "input").mkdir(), (tmp_path / "e1" / "target").mkdir()
     with pytest.raises(ValueError, match="no matching pairs"):
         metrics.PairFolder(tmp_path / "e1")
+
+
+def test_evaluate_keeps_infinite_psnr_and_json_is_strict(tmp_path):
+    rng = np.random.default_rng(0)
+    im = rng.random((8, 8, 3)).astype(np.float32)
+    r = metrics.evaluate(LUT.identity(5), [(im, im), (im, np.zeros_like(im))],
+                         metrics=("psnr",))
+    assert r["psnr_db"] == float("inf")
+    out = tmp_path / "strict.json"
+    rep = metrics.run_matrix({"identity": LUT.identity(5)}, {"same": [(im, im)]}, out=str(out))
+    assert rep["rows"][0]["psnr_db"] == float("inf")
+    text = out.read_text()
+    assert "Infinity" not in text
+    assert json.loads(text)["rows"][0]["psnr_db"] is None
+
+
+def test_run_matrix_builds_a_factory_once():
+    calls = []
+
+    def make():
+        calls.append(1)
+        return LUT.identity(5)
+
+    pairs = _pairs(np.random.default_rng(0))
+    rep = metrics.run_matrix({"m": make}, {"a": pairs, "b": pairs})
+    assert len(calls) == 1 and len(rep["rows"]) == 2
+
+
+def test_mixture_to_lut_requires_the_same_domain():
+    a = LUT.identity(5).replace(domain=(0, 2))
+    b = LUT.identity(5)
+    with pytest.raises(ValueError, match="same input domain"):
+        LUTMixture([a, b]).to_lut(weights=np.array([0.5, 0.5], np.float32))
+
+
+def test_lpips_caches_per_network(monkeypatch):
+    torch = pytest.importorskip("torch")
+    from lutlab.metrics import quality
+
+    seen = []
+
+    class Net:
+        def __init__(self, net):
+            self.net = net
+
+        def eval(self):
+            return self
+
+        def __call__(self, a, b):
+            return torch.tensor([[0.0]])
+
+    class FakeLPIPS:
+        @staticmethod
+        def LPIPS(net, verbose):
+            seen.append(net)
+            return Net(net)
+
+    monkeypatch.setattr(quality, "require", lambda name: torch if name == "torch" else FakeLPIPS)
+    quality._LPIPS_NETS.clear()
+    try:
+        a = np.zeros((2, 2, 3), np.float32)
+        quality.lpips(a, a, net="alex")
+        quality.lpips(a, a, net="vgg")
+        assert seen == ["alex", "vgg"]
+    finally:
+        quality._LPIPS_NETS.clear()
+
+
+def test_mixture_one_pass_matches_the_loop(rng):
+    a, b = testing.random_lut(9, 3, seed=1), testing.random_lut(9, 3, seed=2)
+    mix = LUTMixture([a, b])
+    x = rng.random((50, 3)).astype(np.float32)
+    global_w = np.array([0.3, 0.7], np.float32)
+    per_px = rng.random((50, 2)).astype(np.float32)
+
+    def loop(w, backend):
+        y0, y1 = a(x, backend=backend), b(x, backend=backend)
+        return y0 * w[..., 0:1] + y1 * w[..., 1:2]
+
+    from lutlab._deps import have
+    backends = ("numpy", "torch") if have("torch") else ("numpy",)
+    for backend in backends:
+        assert np.abs(mix(x, context=global_w, backend=backend)
+                      - loop(global_w, backend)).max() < 1e-6
+        assert np.abs(mix(x, context=per_px, backend=backend)
+                      - loop(per_px, backend)).max() < 1e-6
+
+
+def test_mixture_one_pass_torch_gradients():
+    torch = pytest.importorskip("torch")
+    a, b = testing.random_lut(9, 3, seed=1), testing.random_lut(9, 3, seed=2)
+    mix = LUTMixture([a, b])
+    x = torch.rand(20, 3, requires_grad=True)
+    w = torch.rand(20, 2, requires_grad=True)
+    out = mix(x, context=w, backend="torch")
+    out.sum().backward()
+    assert x.grad is not None and w.grad is not None
+
+
+def test_mixture_resample_uses_bound_global_weights(rng):
+    a, b = testing.random_lut(9, 3, seed=1), testing.random_lut(9, 3, seed=2)
+    weights = np.array([0.3, 0.7], np.float32)
+    mix = LUTMixture([a, b], weights=weights)
+    x = rng.random((20, 3)).astype(np.float32)
+    baked = mix.resample(9)
+    assert baked.sizes == (9, 9, 9)
+    assert np.abs(baked(x) - mix(x)).max() < 1e-5
+    with pytest.raises(ValueError, match="global weights"):
+        LUTMixture([a, b]).resample(9)
+
+
+def test_run_matrix_seed_is_real_and_restored():
+    def make():
+        return testing.random_lut(5, 3, seed=int(np.random.randint(1_000_000)))
+
+    pairs = [(im, im) for im in (np.random.default_rng(0).random((8, 8, 3),
+                                                               dtype=np.float32),)]
+    np.random.seed(123)
+    expected = np.random.rand()
+    r1 = metrics.run_matrix({"m": make}, {"t": pairs}, seed=7, metrics=("psnr",))
+    r2 = metrics.run_matrix({"m": make}, {"t": pairs}, seed=7, metrics=("psnr",))
+    r3 = metrics.run_matrix({"m": make}, {"t": pairs}, seed=8, metrics=("psnr",))
+    np.random.seed(123)
+    assert np.random.rand() == expected                       # RNG state restored
+    assert r1["rows"][0]["psnr_db"] == r2["rows"][0]["psnr_db"]
+    assert r1["rows"][0]["psnr_db"] != r3["rows"][0]["psnr_db"]
+
+
+def test_pairfolder_source_depth(tmp_path):
+    iio = pytest.importorskip("imageio.v3")
+    for d in ("input", "target"):
+        (tmp_path / d).mkdir()
+    image = np.full((8, 8), 4095, np.uint16)
+    for d in ("input", "target"):
+        iio.imwrite(tmp_path / d / "a.png", image)
+    x, _ = next(iter(metrics.PairFolder(tmp_path, source_depth=12)))
+    assert x.max() == pytest.approx(1.0)
+    x_default, _ = next(iter(metrics.PairFolder(tmp_path)))
+    assert x_default.max() < 0.1

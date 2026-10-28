@@ -10,8 +10,10 @@ _HINTS = {
     "skimage": "pip install lutlab[metrics]",
     "imageio": "pip install lutlab[eval]",
     "torch": "pip install lutlab[torch] (or a ROCm/CUDA build of torch)",
+    "torchvision": "pip install lutlab[predictor] (or torchvision)",
     "numba": "pip install lutlab[fast]",
-    "lpips": "pip install lpips",
+    "cv2": "pip install lutlab[png] (or opencv-python-headless)",
+    "lpips": "pip install lutlab[lpips] (or lpips)",
 }
 
 

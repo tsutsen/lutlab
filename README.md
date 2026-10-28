@@ -21,13 +21,17 @@ print(lutlab.metrics.e00(out, img).mean())         # CIEDE2000; needs the `metri
 ## Install
 
 ```
-pip install lutlab                 # numpy only: reference backend, formats, LUT type
+pip install lutlab                 # numpy only: reference backend, file formats, LUT type
 pip install "lutlab[fast]"         # + numba CPU kernels
 pip install "lutlab[torch]"        # + differentiable / GPU kernels (or install your own ROCm/CUDA torch)
+pip install "lutlab[png]"          # + OpenCV, for Hald .png read/write
+pip install "lutlab[predictor]"    # + torchvision, for the ResNet predictor (PPR10K)
 pip install "lutlab[metrics]"      # + CIEDE2000 / SSIM        ([eval] adds imageio for PairFolder)
+pip install "lutlab[lpips]"        # + LPIPS (needs torch)
+pip install "lutlab[viz]"          # + matplotlib, for 3D LUT volume plots
 ```
 
-The opt-in `fused` backend is a native HIP kernel compiled from source in
+The opt-in `fused` backend is a native HIP/CUDA kernel compiled from source in
 `lutlab/kernels/` (no separate package). `python -m lutlab info` shows what is
 available on your machine.
 
@@ -41,6 +45,7 @@ available on your machine.
 | `lutlab.metrics` | quality (e00, psnr, ssim, lpips), timing, power, and the evaluation harness (`evaluate`, `run_matrix`, `PairFolder`) |
 | `lutlab.methods` | method registry: things that *produce* a transform (`identity`, `pg_ia_nilut`) |
 | `lutlab.testing` | `random_lut`, `check_backends`, `conformance` |
+| `lutlab.visualize` | `volume`, `comparison`, `grid` — static 3D plots (needs `viz`) |
 
 ## Conventions
 
@@ -84,6 +89,20 @@ Training runs the paper's three stages (`pg.train_pg_ia_nilut`, see `examples/tr
 The paper does not state optimiser settings, loss weights or the CLIP backbone; `TrainConfig` marks
 which values are from the paper and which are placeholders.
 
+## Visualisation
+
+With the optional `viz` extra, render a LUT as a coloured volume:
+
+```python
+import lutlab
+
+lut = lutlab.LUT.load("grade.cube")
+lutlab.visualize.volume(lut, out="grade.png", show_axes=False)
+lutlab.visualize.comparison([lut, lutlab.LUT.identity(33)], out="compare.png")
+```
+
+`visualize` is imported lazily; matplotlib is only needed when a plot is actually drawn.
+
 ## Adding things
 
 ```python
@@ -103,7 +122,7 @@ backends, so a new backend is checked against the numpy oracle and scipy for fre
 ## Development
 
 ```
-pip install -e ".[dev]" && pytest
+pip install -e ".[dev,test]" && pytest
 ```
 
 See `MIGRATION.md` for what changed from 0.1.

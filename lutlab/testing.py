@@ -35,7 +35,11 @@ def random_lut(size=17, n_in: int = 3, *, seed: int = 0, strength: float = 0.08,
     pts = np.stack(np.meshgrid(*_positions(sizes, axes), indexing="ij"), -1)
     noise = interpolate(coarse, pts.reshape(-1, n_in).astype(np.float32),
                         scheme="multilinear").reshape(sizes + (3,))
-    base = LUT.identity(sizes=sizes, axes=axes).volume
+    if n_in == 2:                       # LUT.identity has no canonical 2-D form
+        g = np.meshgrid(*_positions(sizes, axes), indexing="ij")
+        base = np.stack([g[0], g[1], np.zeros_like(g[0])], -1).astype(np.float32)
+    else:
+        base = LUT.identity(sizes=sizes, axes=axes).volume
     return LUT(np.clip(base + noise, 0.0, 1.0), name=name, axes=axes)
 
 
@@ -56,6 +60,12 @@ def check_backends(lut: LUT, *, n: int = 500, seed: int = 0, atol: float = 1e-5)
                 y = apply(lut, x, interp=scheme, backend=name)
             except BackendError as e:
                 out[f"{name}/{scheme}"] = f"skipped: {e}"
+                continue
+            except (RuntimeError, OSError, ImportError) as e:
+                if name != "fused":                     # a real bug in a standard backend
+                    raise
+                # Optional kernel: a GPU torch can exist without nvcc/hipcc.
+                out[f"{name}/{scheme}"] = f"skipped: {type(e).__name__}: {e}"
                 continue
             out[f"{name}/{scheme}"] = float(np.abs(np.asarray(y) - ref).max())
     return out

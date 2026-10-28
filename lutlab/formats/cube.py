@@ -72,15 +72,18 @@ def loads(text: str, *, name: str | None = None, space: str = "srgb") -> LUT:
 
 # Decimal digits needed so a quantised value round-trips within half a grid step:
 # 8-bit step 0.0039 -> 3 digits, 10-bit 0.00098 -> 4, 12/16-bit <= 0.00024 -> 5.
+# Above 16 bits the storage is float32, for which 9 decimal places is lossless.
 _PRECISION = {8: 3, 10: 4, 12: 5, 16: 5}
+_PRECISION_HIGH = 9
 
 
 def dumps(lut: LUT, *, precision: int | None = None) -> str:
     """Return the .cube text. Decimal precision follows ``lut.bit_depth``
-    (8-bit -> 3 digits, ..., 16-bit -> 5) unless ``precision`` is given;
-    use JSON for lossless."""
+    (8-bit -> 3 digits, ..., 16-bit -> 5, above 16 -> 9) unless ``precision``
+    is given; use JSON for lossless."""
     if precision is None:
-        precision = _PRECISION.get(lut.bit_depth, 6)
+        precision = _PRECISION.get(lut.bit_depth,
+                                 _PRECISION_HIGH if (lut.bit_depth or 0) > 16 else 6)
     if lut.n_in != 3:
         raise ValueError(".cube holds 3D LUTs only; save 1D/2D/4D LUTs as .json")
     if len(set(lut.sizes)) != 1:

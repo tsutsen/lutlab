@@ -9,7 +9,10 @@ formats, and the :class:`lutlab.LUT` type. Everything else is an optional extra.
    pip install lutlab                 # core: numpy only
    pip install "lutlab[fast]"         # + numba CPU kernels
    pip install "lutlab[torch]"        # + differentiable / GPU kernels
+   pip install "lutlab[png]"          # + OpenCV, for Hald .png read/write
+   pip install "lutlab[predictor]"    # + torchvision, for the ResNet predictor
    pip install "lutlab[metrics]"      # + CIEDE2000 / SSIM
+   pip install "lutlab[lpips]"        # + LPIPS (needs torch)
    pip install "lutlab[eval]"         # adds imageio for dataset folders
 
 .. note::
@@ -23,8 +26,8 @@ Check what is actually available on your machine:
 
    python -m lutlab info
 
-That prints the installed backend and optional-dependency status (``torch``,
-``numba``, ``scipy``, ...) and the GPUs it can see, so you know which of the
+That prints the installed backend status (which backends are available, and
+why the others are not) and the registered methods, so you know which of the
 :ref:`backends <doc-backends>` paths will run here.
 
 Developing
@@ -32,7 +35,7 @@ Developing
 
 .. code-block:: bash
 
-   pip install -e ".[dev]"
+   pip install -e ".[dev,test]"
    pytest
 
 The test suite is parameterised over backends, so a new backend is automatically

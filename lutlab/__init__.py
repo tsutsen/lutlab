@@ -11,8 +11,8 @@ __version__ = "0.3.0"
 
 from .transforms import LUT, LUTMixture, ColorTransform, Cost
 from .kernels import BackendError
-from . import formats, kernels, methods, metrics, transforms, testing
+from . import formats, kernels, methods, metrics, transforms, testing, visualize
 
 __all__ = ["LUT", "LUTMixture", "ColorTransform", "Cost", "BackendError",
            "transforms", "kernels", "formats", "methods", "metrics", "testing",
-           "__version__"]
+           "visualize", "__version__"]

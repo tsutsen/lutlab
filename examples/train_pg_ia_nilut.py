@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 
 import lutlab
-from lutlab.evaluation import PairFolder, evaluate
+from lutlab.metrics import PairFolder, evaluate
 from lutlab.methods import pg_ia_nilut as pg
 
 

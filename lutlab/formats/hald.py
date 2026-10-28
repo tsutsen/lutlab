@@ -19,9 +19,12 @@
     Files written this way are interchangeable with ImageMagick.
 
 The file's ``bit_depth`` is a LUT attribute (``lut.bit_depth``): ``write`` picks the PNG
-container (8-bit for ``bit_depth<=8``, 16-bit above) and ``read`` recovers it from the file
-(or you override it with ``bit_depth=``). Needs OpenCV (handles 8- and 16-bit RGB PNG; PIL
-cannot).
+container (8-bit for ``bit_depth<=8``, 16-bit above). ``read`` can only recover the two
+container depths, so a 10/12/17..32-bit LUT reads back as 16-bit and a 1..7-bit LUT as
+8-bit (the values stay on the same levels); override with ``bit_depth=`` if needed.
+The pattern stores output values over the unit cube only: a LUT with a custom ``domain``
+or non-uniform ``axes`` is rejected by ``write`` -- use .json for those.
+Needs OpenCV (handles 8- and 16-bit RGB PNG; PIL cannot).
 """
 from __future__ import annotations
 
@@ -55,13 +58,16 @@ def _open_rgb(path) -> np.ndarray:
     img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
     if img is None:
         raise ValueError(f"cannot read image {path!r}")
-    return img[..., ::-1]
+    if img.ndim == 2:
+        img = np.repeat(img[..., None], 3, axis=-1)
+    return img[..., :3][..., ::-1]
 
 
 def _write_png(path, arr: np.ndarray, container: int) -> None:
     top = (2 ** container) - 1
     q = np.clip(np.rint(arr * top), 0, top).astype("uint8" if container == 8 else "uint16")
-    require("cv2").imwrite(str(path), q[..., ::-1])   # RGB -> BGR
+    if not require("cv2").imwrite(str(path), q[..., ::-1]):   # RGB -> BGR
+        raise OSError(f"cannot write image {path!r}")
 
 
 def _infer_levels(img: np.ndarray, cell: int | None) -> int:
@@ -174,7 +180,7 @@ def read(path, *, levels: int | None = None, cell: int | None = None,
     if cell_bin.shape != J.shape[:2]:
         raise ValueError(
             f"Hald cell grid {cell_bin.shape[::-1]} != image {J.shape[::-1]}; pass cell="
-            f"(written with a different cell) or method='grid_pcell'")
+            f"(written with a different cell)")
     flat, pix = cell_bin.ravel(), J.reshape(-1, 3)
     valid = flat >= 0
     volume = np.zeros((levels ** 3, 3), np.float32)
@@ -202,11 +208,18 @@ def write(lut: LUT, path, *, cell: int = 1, bit_depth: int | None = None,
       4096x4096); the table is resampled to ``L**2`` values per axis if needed.
 
     ``bit_depth`` defaults to the LUT's own (else 8). The PNG container is 8-bit for
-    ``bit_depth<=8`` and 16-bit above. Writing above the LUT's depth adds no precision
-    (warns).
+    ``bit_depth<=8`` and 16-bit above, so a 17..32-bit LUT is written to a 16-bit PNG
+    (the tag is not stored). Writing above the LUT's depth adds no precision (warns).
+    The pattern stores values over the unit cube, so a custom ``domain`` or a
+    non-uniform grid cannot be represented; those raise -- use .json for them.
     """
     if lut.n_in != 3 or len(set(lut.sizes)) != 1:
         raise ValueError(f"Hald CLUT needs a cubic 3-D LUT, got n_in={lut.n_in} sizes={lut.sizes}")
+    if not lut.is_uniform:
+        raise ValueError("Hald CLUT stores a uniform grid only; "
+                         "resample first or use .json")
+    if not lut.has_default_domain:
+        raise ValueError("Hald CLUT stores the unit domain only; use .json for a custom domain")
     bd = bit_depth if bit_depth is not None else (lut.bit_depth if lut.bit_depth is not None else 8)
     lut_bd = lut if lut.bit_depth == bd else lut.to_bit_depth(bd)
     container = 8 if bd <= 8 else 16

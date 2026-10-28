@@ -10,8 +10,8 @@ authors:
     email: harlov.leonid@ya.ru
 url: "https://github.com/tsutsen/lutlab"
 license: MIT
-version: 0.1.0
-date-released: "2025-01-01"
+version: 0.3.0
+date-released: "2026-10-25"
 related-project:
   - title: "lutlab-paper: reproducing the measurements behind the lutlab software paper"
     url: "https://github.com/tsutsen/lutlab-paper"

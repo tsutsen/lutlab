@@ -106,6 +106,8 @@ def train_stage1(model: PGIANILUT, scorer, loader, cfg: TrainConfig, *, device, 
                  log: Callable | None = None) -> dict:
     """Stage 1 (Eq. 8): fit the filters E with the prompt guidance loss only."""
     history = {} if history is None else history
+    if len(loader) == 0:
+        raise ValueError("empty dataset: stage 1 needs at least one batch")
     model.filters.train()
     opt = torch.optim.Adam(model.filters.parameters(), lr=cfg.lr_filters)
     it = _cycle(loader)
@@ -164,28 +166,33 @@ def train_stage3(model: PGIANILUT, dataset: Dataset, cfg: TrainConfig, *, device
     history = {} if history is None else history
     if model.predictor is None:
         raise ValueError("model has no predictor to train")
+    was_trainable = [p.requires_grad for p in model.filters.parameters()]
     model.filters.requires_grad_(False)
     model.filters.eval()
     model.predictor.train()
-    opt = torch.optim.Adam(model.predictor.parameters(), lr=cfg.lr_predictor)
-    loader = DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True,
-                        generator=torch.Generator().manual_seed(cfg.seed + 1))
-    for epoch in range(cfg.stage3_epochs):
-        tot = 0.0
-        for _, x, t in loader:
-            x, t = x.to(device), t.to(device)
-            y = model.filters.enhance(x, model.predict_weights(x), bypass=cfg.bypass_train,
-                                      N=cfg.lut_size)
-            loss = F.mse_loss(y, t)
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
-            opt.step()
-            tot += loss.item() * x.shape[0]
-        _log(history, "stage3_mse", tot / len(dataset))
-        if log:
-            log(f"[stage 3] epoch {epoch + 1}/{cfg.stage3_epochs}  mse={tot / len(dataset):.5f}")
-    model.predictor.eval()
-    return history
+    try:
+        opt = torch.optim.Adam(model.predictor.parameters(), lr=cfg.lr_predictor)
+        loader = DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True,
+                            generator=torch.Generator().manual_seed(cfg.seed + 1))
+        for epoch in range(cfg.stage3_epochs):
+            tot = 0.0
+            for _, x, t in loader:
+                x, t = x.to(device), t.to(device)
+                y = model.filters.enhance(x, model.predict_weights(x), bypass=cfg.bypass_train,
+                                          N=cfg.lut_size)
+                loss = F.mse_loss(y, t)
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+                opt.step()
+                tot += loss.item() * x.shape[0]
+            _log(history, "stage3_mse", tot / len(dataset))
+            if log:
+                log(f"[stage 3] epoch {epoch + 1}/{cfg.stage3_epochs}  mse={tot / len(dataset):.5f}")
+        model.predictor.eval()
+        return history
+    finally:
+        for p, trainable in zip(model.filters.parameters(), was_trainable):
+            p.requires_grad_(trainable)
 
 
 def train_pg_ia_nilut(data, scorer=None, cfg: TrainConfig | None = None, *, device=None,
@@ -196,6 +203,8 @@ def train_pg_ia_nilut(data, scorer=None, cfg: TrainConfig | None = None, *, devi
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     torch.manual_seed(cfg.seed)
     ds = data if isinstance(data, Dataset) else ImagePairDataset(data, cfg.size)
+    if len(ds) == 0:
+        raise ValueError("empty dataset: no (input, target) pairs to train on")
     scorer = scorer if scorer is not None else ClipScorer(dataset=cfg.dataset, device=device)
     model = PGIANILUT(IANILUT(cfg.n_params, cfg.hidden, cfg.n_layers),
                       make_predictor(cfg.predictor, cfg.n_params)).to(device)

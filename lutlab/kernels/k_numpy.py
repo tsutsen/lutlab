@@ -95,3 +95,23 @@ def _unsupported(req: Request):
 
 register(Backend(name="numpy", run=run, unsupported=_unsupported,
                  priority=0, reference=True))
+
+
+def mix(volumes, x, weights, axes, scheme):
+    """Interpolate S LUTs on one grid and blend them per pixel.
+
+    ``volumes (S, D0..Dn-1, 3)``, ``x (N, n)``, ``weights (N, S)``. The cell
+    lookup is done once; each LUT is then interpolated with that same result.
+    """
+    S = volumes.shape[0]
+    sizes = volumes.shape[1:-1]
+    strides = strides_of(sizes)
+    vf = volumes.reshape(S, -1, 3)
+    out = np.zeros((x.shape[0], 3), np.float32)
+    if x.shape[0] == 0:
+        return out
+    i0, f = _locate(x, sizes, axes)
+    fn = _KERNELS[scheme]
+    for s in range(S):
+        out += weights[:, s:s + 1] * fn(vf[s], strides, i0, f)
+    return out

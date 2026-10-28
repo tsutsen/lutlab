@@ -161,3 +161,43 @@ def test_compact_storage_memory():
     for l in (l8, l16):
         assert l.volume.dtype == np.float32
         assert float(l.volume.min()) >= 0.0 and float(l.volume.max()) <= 1.0
+
+
+def test_bit_depth_32_is_the_cap_and_uses_float32_storage():
+    volume = np.random.default_rng(0).random((5, 5, 5, 3), dtype=np.float32)
+    l32 = LUT(volume, bit_depth=32)
+    assert l32.bit_depth == 32 and l32.raw.dtype == np.float32 and l32.raw_top is None
+    assert l32.volume.dtype == np.float32
+    assert np.abs(l32.volume - volume).max() < 1e-6
+    with pytest.raises(ValueError, match="between 1 and 32"):
+        LUT(volume, bit_depth=33)
+    with pytest.raises(ValueError, match="between 1 and 32"):
+        l32.to_bit_depth(33)
+
+
+def test_1bit_volume_is_still_float32():
+    l1 = LUT(np.random.default_rng(1).random((5, 5, 5, 3), dtype=np.float32), bit_depth=1)
+    assert l1.raw.dtype == np.uint8 and l1.volume.dtype == np.float32
+
+
+def test_random_lut_supports_two_inputs():
+    lut = lutlab.testing.random_lut(5, 2, seed=0)
+    assert lut.shape == (5, 5, 3) and lut.n_in == 2
+
+
+def test_allclose_checks_axes_and_domain():
+    volume = np.random.default_rng(2).random((5, 5, 5, 3), dtype=np.float32)
+    assert LUT(volume).allclose(LUT(volume))
+    rect = LUT(volume, axes=[np.linspace(0, 1, 5) ** 2] * 3)
+    assert not LUT(volume).allclose(rect)
+    assert not LUT(volume).allclose(LUT(volume, domain=(0, 2)))
+
+
+def test_to_float_source_depth():
+    from lutlab._arrays import to_float
+    assert to_float(np.array([4095], np.uint16), source_depth=12)[0] == 1.0
+    assert to_float(np.array([255], np.uint8), source_depth=8)[0] == 1.0
+    with pytest.raises(ValueError, match="source_depth"):
+        to_float(np.array([1], np.uint16), source_depth=17)
+    with pytest.raises(ValueError, match="integer"):
+        to_float(np.ones(1, np.float32), source_depth=12)

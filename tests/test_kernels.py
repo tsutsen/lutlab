@@ -231,3 +231,27 @@ def test_torch_gradients(torch, rng):
     out = interpolate(volume, x)                            # auto -> torch when grads needed
     out.sum().backward()
     assert volume.grad is not None and x.grad is not None
+
+
+def test_interpolate_rejects_bad_axes(rng):
+    volume = rng.random((4, 4, 4, 3)).astype(np.float32)
+    x = rng.random((5, 3)).astype(np.float32)
+    with pytest.raises(ValueError, match="axes"):
+        interpolate(volume, x, axes=[np.array([0, 0.9, 0.1, 1.0], np.float32)] * 3,
+                    backend="numpy")
+    with pytest.raises(ValueError, match="axes"):
+        interpolate(volume, x, axes=[np.array([0, 1], np.float32)] * 3, backend="numpy")
+
+
+def test_lut_tensors_are_cached_per_dtype(torch):
+    from lutlab.kernels import dispatch
+    lut = testing.random_lut(5, 3, seed=1).to_bit_depth(8)
+    x = torch.rand(4, 3)
+    lut(x, backend="torch")
+    cache = dispatch._LUT_TENSORS[lut]
+    assert len(cache) == 1
+    first = next(iter(cache.values()))
+    lut(x, backend="torch")
+    assert next(iter(cache.values())) is first
+    lut(x.double(), backend="torch")
+    assert len(cache) == 2

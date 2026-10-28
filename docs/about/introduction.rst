@@ -14,7 +14,6 @@ What it does
 * **Apply LUTs** to images on CPU or GPU, with several interpolation schemes
   (:ref:`nearest <scheme-nearest>`, trilinear, tetrahedral) and several
   backends (:ref:`backends <sec-backends>`).
-* **Extract a LUT** back from a Hald render or a before/after image pair.
 * **Measure results** with quality metrics (CIEDE2000, PSNR, SSIM, LPIPS),
   timing, and a small power model.
 
@@ -28,7 +27,7 @@ Why a testbed
 -------------
 
 A LUT-based method is only interesting relative to the baselines around it: the
-identity LUT, a straight Hald extraction, a segmented fit, and a learned LUT.
+identity LUT, a Hald CLUT loaded from a file, a segmented blend, and a learned LUT.
 ``lutlab`` keeps all of those behind one interface -- the
 :ref:`ColorTransform protocol <sec-colortransform>` -- so an experiment is "build
 a transform, evaluate it, report it" rather than a pile of ad-hoc scripts that

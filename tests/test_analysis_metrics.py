@@ -71,3 +71,49 @@ def test_timing_helpers():
     assert metrics.to_fps(10.0) == 100.0 and metrics.to_fps(0.0) == float("inf")
     s = metrics.apply_speed(LUT.identity(9), np.zeros((64, 64, 3), np.float32), warmup=1, repeat=3)
     assert s["fps"] > 0 and s["mpx_s"] > 0
+
+
+def test_lut_space_accuracy_2d_needs_a_reference():
+    lut = LUT(np.zeros((3, 3, 3), np.float32))
+    with pytest.raises(ValueError, match="ref_lut"):
+        metrics.lut_space_accuracy(lut)
+    assert metrics.lut_space_accuracy(lut, lut)["max_channel"] == 0.0
+
+
+def test_psnr_and_ssim_match_scikit_image(rng):
+    from skimage.metrics import peak_signal_noise_ratio as sk_psnr
+    from skimage.metrics import structural_similarity as sk_ssim
+    a = rng.random((16, 16, 3))
+    b = rng.random((16, 16, 3))
+    assert metrics.psnr(a, b) == pytest.approx(sk_psnr(a, b, data_range=1.0))
+    assert metrics.ssim(a, b) == pytest.approx(
+        sk_ssim(a, b, channel_axis=2, data_range=1.0))
+
+
+def test_gpu_power_parses_nvidia_smi(monkeypatch):
+    from lutlab.metrics import power
+
+    class Result:
+        returncode = 0
+        stdout = "123.4\n"
+
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[0] == "rocm-smi":
+            raise FileNotFoundError
+        return Result()
+
+    monkeypatch.setattr(power.subprocess, "run", fake_run)
+    assert power.gpu_power_watts("cuda:1") == 123.4
+    assert calls[-1][:2] == ["nvidia-smi", "--id=1"]
+
+
+def test_power_sample_synchronises(monkeypatch):
+    from lutlab.metrics import power
+    calls = []
+    monkeypatch.setattr(power, "cuda_sync", lambda: calls.append(1))
+    monkeypatch.setattr(power, "gpu_power_watts", lambda device: 10.0)
+    r = power.power_sample(lambda: None, warmup=1, repeat=2)
+    assert r["watts"] == 10.0 and len(calls) >= 4

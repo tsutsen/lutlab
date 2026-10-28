@@ -217,7 +217,8 @@ Current GPU package power draw in watts, read via ``rocm-smi`` (AMD) or
 
 Apply ``transform`` to every input in ``pairs`` and score it against the
 corresponding target with the named :ref:`metrics <doc-quality>`, returning the
-mean score per metric.
+mean score per metric. Non-finite scores are kept: one perfect PSNR makes the
+mean infinite. ``run_matrix`` writes non-finite values as JSON ``null``.
 
 ----
 
@@ -228,8 +229,11 @@ mean score per metric.
 **run_matrix** ``(methods: Mapping[str, object], tasks: Mapping[str, Iterable], *, out: str | None = None, seed: int = 0, meta: dict | None = None) -> dict``
 
 Score every transform in ``methods`` across every dataset in ``tasks``, returning
-a results matrix (and writing a table to ``out`` when given). This is the
-driver behind the paper's benchmark tables.
+a results matrix (and writing a JSON report to ``out`` when given). A factory in
+``methods`` is built once per method, not once per task. ``seed`` seeds Python,
+numpy and (when torch is already imported) torch for construction and evaluation;
+the previous RNG states are restored afterwards. This is the driver behind the
+paper's benchmark tables.
 
 ----
 
@@ -242,12 +246,14 @@ Type descriptions
 
 .. rst-class:: classref-method
 
-**PairFolder** ``(root: str, input_dir: str = "input", target_dir: str = "target", exts: tuple[str, ...] = ..., bit_depth: int | None = None)``
+**PairFolder** ``(root: str, input_dir: str = "input", target_dir: str = "target", exts: tuple[str, ...] = ..., bit_depth: int | None = None, source_depth: int | None = None, cache: int = 0)``
 
 An iterable of ``(input, target)`` image pairs found under ``root``/``input_dir``
-and ``root``/``target_dir``. ``bit_depth`` optionally quantises the loaded pairs
-to a given depth before scoring (see :ref:`Bit depth and compact storage
-<doc-bitdepth>`).
+and ``root``/``target_dir``. ``source_depth`` is the bit depth actually used
+inside an integer container (for example 12 for a 12-bit image stored as uint16);
+``bit_depth`` optionally quantises the loaded pairs to a given depth before
+scoring (see :ref:`Bit depth and compact storage <doc-bitdepth>`). ``cache`` keeps
+up to that many decoded pairs in memory (0 disables it).
 
 ----
 

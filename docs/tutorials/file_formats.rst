@@ -18,13 +18,13 @@ same extension is how a LUT is told which format to write.
      - written with the standard header (``TITLE``, ``LUT_3D_SIZE``, ...); ``DOMAIN_MIN`` / ``DOMAIN_MAX`` honoured
    * - ``.json``
      - Structured JSON
-     - the format ``lutlab`` itself round-trips in the test suite
+     - lossless: values, axes, domain, space and the bit-depth tag
    * - ``.npy``
      - Raw ``numpy`` volume
-     - lossless, no metadata
+     - values only, no metadata (the bit-depth tag is lost)
    * - ``.png``
      - A Hald pattern (see below)
-     - quantised to the LUT's :ref:`bit depth <doc-bitdepth>`
+     - quantised to an 8- or 16-bit PNG; see the Hald notes below
 
 .. code-block:: python
 
@@ -32,9 +32,11 @@ same extension is how a LUT is told which format to write.
    lut2 = lutlab.LUT.load("grade.cube")
 
 The ``.cube`` writer emits the standard header and honours ``DOMAIN_MIN`` /
-``DOMAIN_MAX``; it also still reads the pre-0.2 header. The ``.json`` and
-``.npy`` writers carry the values but not the :ref:`bit-depth tag
-<doc-bitdepth>` -- a quantised LUT reloaded from them comes back as float.
+``DOMAIN_MAX``; it also still reads the pre-0.2 header. ``.json`` is lossless
+and keeps the :ref:`bit-depth tag <doc-bitdepth>`. ``.npy`` stores the compact
+buffer only for 8/16-bit LUTs and float32 for every other depth, so its tag is
+lost on read; use ``.json`` when the tag matters. ``.cube`` is decimal text and
+carries no tag either.
 
 Hald as a format
 ----------------
@@ -64,17 +66,19 @@ layouts exist and ``lutlab.formats.hald`` reads and writes both:
    round-trip.
 
 * **Write** renders the LUT onto the requested pattern and saves a PNG. The PNG
-  is 8-bit or 16-bit, chosen from the LUT's :ref:`bit depth
-  <doc-bitdepth>`; a quantised LUT is stored at its exact depth, so the
-  round-trip is *lossless* (max error ``1 / (2**bit_depth - 1)``).
-* **Read** parses the pattern back into a :class:`lutlab.LUT`, inferring the
-  stored depth from the file.
+  is 8-bit for ``bit_depth <= 8`` and 16-bit above, chosen from the LUT's
+  :ref:`bit depth <doc-bitdepth>`. A custom domain or a non-uniform grid cannot
+  be represented by the unit-cube pattern and raises -- use ``.json`` for those.
+* **Read** parses the pattern back into a :class:`lutlab.LUT`, inferring only
+  the container depth (8 or 16) from the file. A 10/12/17..32-bit LUT therefore
+  reads back as 16-bit and a 1..7-bit LUT as 8-bit; the values stay on the same
+  levels. Pass ``bit_depth=`` to relabel the result.
 
 .. code-block:: python
 
-   lut.save("grade.png")                       # lutlab variant, 8-bit for an 8-bit LUT
+   lut.save("grade.png")                       # lutlab variant; 8-bit for a float LUT
    lut2 = lutlab.LUT.load("grade.png")
-   lut2.allclose(lut)                          # True (lossless round-trip)
+   lut2.allclose(lut)                          # exact only if lut was already 8-bit
 
    lut.save("hald8.png", layout="canonical", level=8)   # ImageMagick-compatible
    lut3 = lutlab.LUT.load("hald8.png", layout="canonical")
@@ -88,6 +92,7 @@ layouts exist and ``lutlab.formats.hald`` reads and writes both:
 .. note::
 
    Writing a Hald chart needs OpenCV (``cv2``) and a cubic (3-D) LUT. Reading
-   is the same. The pattern itself is pure numpy; only the PNG I/O needs
-   ``cv2``, because PIL and imageio in current releases cannot write 16-bit
-   *RGB* PNG.
+   is the same. Install it with ``pip install "lutlab[png]"`` (or
+   ``opencv-python-headless``). The pattern itself is pure numpy; only the PNG
+   I/O needs ``cv2``, because PIL and imageio in current releases cannot write
+   16-bit *RGB* PNG.

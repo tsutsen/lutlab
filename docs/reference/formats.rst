@@ -59,16 +59,16 @@ Submodules
      - **Description**
    * - ``cube``
      - ``.cube``
-     - Adobe Photoshop / 3D LUT ``.cube`` text format; decimal precision follows the LUT's ``bit_depth`` (8 -> 3 digits, ..., 16 -> 5).
+     - Adobe Photoshop / 3D LUT ``.cube`` text format; decimal precision follows the LUT's ``bit_depth`` (8 -> 3 digits, ..., 16 -> 5, above 16 -> 9). No bit-depth tag.
    * - ``hald``
      - ``.png``
-     - Hald CLUT pattern (8-bit or 16-bit PNG), in the canonical layout (ImageMagick ``hald:N``) or the lutlab variant; round-trips ``bit_depth``.
+     - Hald CLUT pattern (8-bit or 16-bit PNG), in the canonical layout (ImageMagick ``hald:N``) or the lutlab variant. Only the 8/16 container depth is recovered; custom domains and non-uniform grids are rejected. Needs OpenCV.
    * - ``lutjson``
      - ``.json``
      - Lossless JSON container: the compact grid (uint8 / uint16 / float32) plus ``bit_depth``, axes / domain / space.
    * - ``npy``
      - ``.npy``
-     - Raw compact grid via ``numpy``: uint8 (8-bit), uint16 (16-bit), float32 otherwise; no metadata.
+     - Raw grid via ``numpy``: uint8 (8-bit), uint16 (16-bit), float32 for every other depth and unquantised; no metadata, so the bit-depth tag is lost.
 
 ----
 

@@ -26,6 +26,7 @@ satisfying this shape can be applied, benchmarked and
    formats
    testing
    methods
+   visualize
 
 Classes
 -------
@@ -66,3 +67,5 @@ Modules
      - Cross-backend checks and the transform conformance suite.
    * - :ref:`methods <mod-methods>`
      - The registry of things that produce a transform from data.
+   * - :ref:`visualize <mod-visualize>`
+     - Static 3D plots of LUT volumes (requires the ``viz`` extra).

@@ -44,6 +44,10 @@ def test_de76_metric():
 torch = pytest.importorskip("torch")
 
 
+class _UnpicklePayload:
+    pass
+
+
 @pytest.fixture
 def E():
     torch.manual_seed(0)
@@ -121,7 +125,7 @@ def test_numpy_path_through_lutlab_kernels_equals_torch_path(E):
     a = t(img)                                                       # numpy -> LUT -> lutlab backend
     b = t(torch.as_tensor(img))                                      # torch -> differentiable lookup
     assert isinstance(a, np.ndarray) and torch.is_tensor(b)
-    assert np.abs(a - b.numpy()).max() < 1e-5
+    assert np.abs(a - b.detach().numpy()).max() < 1e-5
     assert np.abs(a - t(img, backend="numpy", interp="multilinear")).max() < 1e-5   # kwargs reach lutlab
 
 
@@ -258,6 +262,7 @@ def test_stage3_freezes_the_filters_and_trains_only_the_predictor():
     pg.train_stage3(model, pg.ImagePairDataset(_toy_pairs(), (16, 16)), cfg, device=torch.device("cpu"))
     assert all(torch.equal(v, f0[k]) for k, v in model.filters.state_dict().items())
     assert any(not torch.equal(v, p0[k]) for k, v in model.predictor.state_dict().items())
+    assert all(p.requires_grad for p in model.filters.parameters())   # flags restored
     with pytest.raises(ValueError, match="no predictor"):
         pg.train_stage3(pg.PGIANILUT(pg.IANILUT(3, 8, 3)), pg.ImagePairDataset(_toy_pairs(), (16, 16)),
                         cfg, device=torch.device("cpu"))
@@ -308,3 +313,55 @@ def test_clip_scorer_smoke():
     s = pg.ClipScorer(dataset="fivek")
     c = s(torch.rand(2, 64, 64, 3))
     assert c.shape == (2, 5) and ((c > 0) & (c < 1)).all()
+
+
+def test_empty_dataset_fails_fast():
+    cfg = pg.TrainConfig(n_params=3, hidden=8, n_layers=2, stage1_steps=1)
+    with pytest.raises(ValueError, match="empty dataset"):
+        pg.train_pg_ia_nilut([], scorer=lambda images: None, cfg=cfg, device="cpu")
+    model = pg.PGIANILUT(pg.IANILUT(3, 8, 2))
+    with pytest.raises(ValueError, match="empty dataset"):
+        pg.train_stage1(model, lambda images: None,
+                        torch.utils.data.DataLoader([], batch_size=2), cfg,
+                        device=torch.device("cpu"))
+
+
+def test_from_official_refuses_untrusted_pickle(tmp_path):
+    p = tmp_path / "untrusted.pt"
+    torch.save({"weights_generator.weights_generator.weight": _UnpicklePayload()}, p)
+    with pytest.raises(RuntimeError, match="trusted=True"):
+        pg.PGIANILUT.from_official(p)
+
+
+def test_transform_respects_the_ambient_grad_mode(E):
+    t = pg.PGIANILUT(E).transform(w=E.weights(exposure=0.4))
+    x = torch.rand(8, 8, 3, requires_grad=True)
+    out = t(x)
+    assert out.requires_grad
+    out.sum().backward()
+    assert x.grad is not None
+    with torch.no_grad():
+        assert not t(x).requires_grad
+
+
+def test_from_official_remaps_official_keys(tmp_path):
+    model = pg.PGIANILUT(pg.IANILUT(5), pg.CnnPredictor(5))
+    official = {}
+    for key, value in model.state_dict().items():
+        if key.startswith("filters.mlp."):
+            official["PG_IA_NILUT.net." + key[len("filters.mlp."):]] = value
+        elif key.startswith("predictor.net."):
+            i, param = key[len("predictor.net."):].split(".", 1)
+            i = int(i)
+            official[f"backbone.{i // 3}.{i % 3}.{param}"] = value
+        elif key.startswith("predictor.fc."):
+            official["weights_generator.weights_generator."
+                     + key[len("predictor.fc."):]] = value
+    p = tmp_path / "official.pt"
+    torch.save(official, p)
+    loaded = pg.PGIANILUT.from_official(p)
+    expected = model.state_dict()
+    got = loaded.state_dict()
+    assert set(got) == set(expected)
+    for key in expected:
+        assert torch.equal(expected[key], got[key]), key

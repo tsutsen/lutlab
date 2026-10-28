@@ -1,8 +1,9 @@
 """Lossless JSON container. Any dimensionality, axes, domain, bit depth.
 
 Schema v3 stores the LUT's compact grid (uint8 / uint16 / float32) plus an
-explicit ``bit_depth`` -- exact round-trip at every quantisation. Schema v2
-(base64 float32) is still readable.
+explicit ``bit_depth`` -- exact round-trip at every quantisation. Above 16 bits
+the stored float32 grid is already normalised to [0, 1]. Schema v2 (base64
+float32) is still readable.
 """
 from __future__ import annotations
 
@@ -47,6 +48,8 @@ def loads(text: str, *, name: str | None = None) -> LUT:
     if n is not None and raw.dtype.kind in "iu":
         top = float((2 ** int(n)) - 1)
         volume = raw.astype(np.float32) / top
+    elif n is not None:
+        volume = raw.astype(np.float32)       # >16-bit: already normalised float32
     else:
         volume, n = raw.astype(np.float32), None
     dom = obj.get("domain")

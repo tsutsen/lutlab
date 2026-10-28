@@ -92,3 +92,59 @@ def _auto_when(req: Request) -> bool:
 
 register(Backend(name="torch", run=run, available=_available, priority=30,
                  torch_native=True, differentiable=True, auto_when=_auto_when))
+
+
+def mix(volumes, x, weights, axes, scheme):
+    """Torch version of :func:`lutlab.kernels.k_numpy.mix` (differentiable)."""
+    import torch
+    dtype = x.dtype if x.dtype in (torch.float32, torch.float64) else torch.float32
+    x = x.to(dtype)
+    volumes = volumes.to(dtype)
+    weights = weights.to(dtype)
+    S = volumes.shape[0]
+    sizes = tuple(int(s) for s in volumes.shape[1:-1])
+    n = len(sizes)
+    strides = [int(s) for s in strides_of(sizes)]
+    st = torch.tensor(strides, dtype=torch.long, device=x.device)
+    vf = volumes.reshape(S, -1, 3)
+    i0, f = _locate(torch, x, sizes, axes)
+    base = (i0 * st).sum(1)
+    out = x.new_zeros((x.shape[0], 3))
+
+    if scheme == "nearest":
+        sel = i0 + (f >= 0.5).long()
+        idx = (sel * st).sum(1)
+        for s in range(S):
+            out = out + weights[:, s:s + 1] * vf[s][idx]
+        return out
+
+    if scheme == "multilinear":
+        corners = []
+        for c in range(1 << n):
+            off, w = 0, None
+            for k in range(n):
+                if (c >> k) & 1:
+                    off += strides[k]
+                    wk = f[:, k]
+                else:
+                    wk = 1.0 - f[:, k]
+                w = wk if w is None else w * wk
+            corners.append((off, w))
+        for s in range(S):
+            y = x.new_zeros((x.shape[0], 3))
+            for off, w in corners:
+                y = y + w.unsqueeze(1) * vf[s][base + off]
+            out = out + weights[:, s:s + 1] * y
+        return out
+
+    order = torch.argsort(f, dim=1, descending=True)
+    fs = torch.gather(f, 1, order)
+    w = torch.stack([1.0 - fs[:, 0], fs[:, 0] - fs[:, 1],
+                     fs[:, 1] - fs[:, 2], fs[:, 2]], dim=1)
+    o1 = st[order[:, 0]]
+    o2 = o1 + st[order[:, 1]]
+    idx = torch.stack([base, base + o1, base + o2, base + sum(strides)], dim=1)
+    for s in range(S):
+        y = (w.unsqueeze(2) * vf[s][idx]).sum(1)
+        out = out + weights[:, s:s + 1] * y
+    return out

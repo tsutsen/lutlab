@@ -63,22 +63,22 @@ def ssim(a, b) -> float:
     return float(metrics.structural_similarity(a, b, channel_axis=2, data_range=1.0, win_size=ws))
 
 
-_LPIPS_NET = None
+_LPIPS_NETS: dict[str, object] = {}
 
 
 def lpips(a, b, *, net: str = "alex") -> float:
-    """LPIPS distance for ``(H, W, 3)`` images in [0, 1]. Needs `pip install lpips` + torch."""
-    global _LPIPS_NET
+    """LPIPS distance for ``(H, W, 3)`` images in [0, 1]. Needs ``lutlab[lpips]`` + torch."""
     torch = require("torch")
-    if _LPIPS_NET is None:
-        _LPIPS_NET = require("lpips").LPIPS(net=net, verbose=False).eval()
+    model = _LPIPS_NETS.get(net)
+    if model is None:
+        model = _LPIPS_NETS[net] = require("lpips").LPIPS(net=net, verbose=False).eval()
 
     def prep(x):
         t = torch.as_tensor(np.asarray(x, np.float32)).permute(2, 0, 1)[None]
         return t * 2.0 - 1.0
 
     with torch.no_grad():
-        return float(_LPIPS_NET(prep(a), prep(b)).item())
+        return float(model(prep(a), prep(b)).item())
 
 
 def accuracy(out, ref, *, space: str = "srgb") -> dict[str, float]:
@@ -92,8 +92,11 @@ def lut_space_accuracy(lut, ref_lut=None, *, space: str | None = None) -> dict[s
     """How far ``lut`` sits from ``ref_lut`` (default: identity), on the grid.
 
     ``max_channel`` is the largest per-channel change the LUT makes at any grid
-    point (``delta_from_identity`` in 0.2).
+    point (``delta_from_identity`` in 0.2). A 2-input LUT has no canonical
+    identity, so pass ``ref_lut=`` there.
     """
+    if ref_lut is None and lut.n_in == 2:
+        raise ValueError("a 2-input LUT has no canonical identity; pass ref_lut=")
     ref = ref_lut if ref_lut is not None else LUT.identity(sizes=lut.sizes, axes=lut.axes)
     if lut.sizes != ref.sizes:
         raise ValueError(f"grids differ: {lut.sizes} vs {ref.sizes}; resample first")

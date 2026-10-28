@@ -7,14 +7,19 @@
 # dotfiles so the source tree stays tidy in the generated output.
 
 import os
+from importlib.metadata import PackageNotFoundError, version as _package_version
 
 project = "lutlab"
 author = "the lutlab maintainers"
-copyright = "2025, the lutlab maintainers"
+copyright = "2026, the lutlab maintainers"
 
-# The short X.Y version, acts as replacement for |version| and |release|.
-version = "0.3"
-release = version
+# One source of truth: the installed package metadata (which hatch reads from
+# ``lutlab/__init__.py``). Fall back only when building docs from a bare checkout.
+try:
+    release = _package_version("lutlab")
+except PackageNotFoundError:
+    release = "0.3.0"
+version = ".".join(release.split(".")[:2])
 needs_sphinx = "7.0"
 
 # -- Build ------------------------------------------------------------------

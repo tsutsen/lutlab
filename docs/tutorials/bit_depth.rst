@@ -16,14 +16,16 @@ changes what a Hald ``.png`` round-trip does.
 
    lut = lutlab.LUT(np.random.rand(33, 33, 33, 3), bit_depth=8)
 
-   lut.dtype          # numpy.uint8  -- actually stored
+   lut.raw.dtype      # numpy.uint8  -- actually stored
    lut.nbytes         # 107,811 bytes (a float 33^3 is 431,244)
    lut.volume         # float32 [0, 1] -- always, for the kernels
 
 Quantising at 8 bits divides the stored size by **4**; at 16 bits, by **2**. The
 public ``lut.volume`` stays float32 in ``[0, 1]`` for the kernels; only the stored
 buffer is compact, and :meth:`lutlab.LUT.nbytes` / ``lut.cost().nbytes`` report
-the real size.
+the real size. Above 16 bits there is no smaller integer buffer: the values are
+quantised to the requested level count but stored as float32, so 32 bits is the
+cap and float32 is its precision.
 
 .. list-table::
    :header-rows: 1
@@ -44,8 +46,13 @@ the real size.
      - ``uint8``
      - 107,811
      - **4×** smaller
+   * - ``17 .. 32``
+     - ``float32``
+     - 431,244
+     - no smaller buffer
 
-Supported values are ``1, 2, 4, 8, 16``.
+Supported values are ``1 .. 32``. Depths 1..8 use ``uint8``, 9..16 use
+``uint16``, and 17..32 use ``float32``.
 
 Changing depth
 --------------
@@ -66,16 +73,21 @@ Changing depth
 How it interacts with formats
 -----------------------------
 
-* **Hald ``.png``** is the one format that round-trips the tag: a quantised LUT
-  is written at its depth (8-bit PNG for ``bit_depth <= 8``, 16-bit PNG for
-  ``> 8``) and read back at the same depth, *losslessly*.
-* **``.cube`` / ``.json`` / ``.npy``** store the float upcast and drop the tag
-  on reload -- a quantised LUT reloaded from them comes back float.
+* **``.json``** is lossless: it stores the compact grid *and* ``bit_depth``, so
+  the tag survives a round-trip at every depth.
+* **Hald ``.png``** uses an 8-bit container for ``bit_depth <= 8`` and a 16-bit
+  container above that. The PNG itself only says which container was used, so a
+  10/12/17..32-bit LUT reads back as 16-bit and a 1..7-bit LUT as 8-bit; the
+  values stay on the same levels. Custom domains and non-uniform grids cannot
+  be stored in a Hald pattern and are rejected by ``write``.
+* **``.cube`` / ``.npy``** store values but not the tag. ``.npy`` writes the
+  compact buffer only for 8/16-bit LUTs and float32 otherwise, so the tag is
+  lost; use ``.json`` when it matters. ``.cube`` is decimal text with no tag.
 
 Throughput
 ----------
 
-At the LUT sizes used in the benchmark (``N <= 65``), quantisation does **not**
+For the LUT sizes used in practice (``N <= 65``), quantisation does **not**
 change apply throughput: the kernels interpolate on a float volume either way and
 the image, not the LUT, dominates. The win is **memory**, not speed. A speed win
 would need a LUT larger than the L2 cache *and* a kernel that interpolates

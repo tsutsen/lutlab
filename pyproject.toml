@@ -4,12 +4,32 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lutlab"
-version = "0.3.0"
+dynamic = ["version"]
 description = "A small library and testbed for colour LUTs and LUT-based methods"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
+authors = [{ name = "Leon Harlov", email = "harlov.leonid@ya.ru" }]
+keywords = ["colour", "LUT", "3D LUT", "image processing", "colour grading"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
 dependencies = ["numpy>=1.23"]
+
+[project.urls]
+Homepage = "https://github.com/tsutsen/lutlab"
+Repository = "https://github.com/tsutsen/lutlab"
+Issues = "https://github.com/tsutsen/lutlab/issues"
+Documentation = "https://lutlab.readthedocs.io/"
 
 [project.optional-dependencies]
 fast = ["numba>=0.57"]                       # multi-threaded CPU kernels
@@ -17,8 +37,20 @@ torch = ["torch>=2.0"]                       # differentiable / GPU kernels, lea
 clip = ["torch>=2.0", "open_clip_torch>=2.20"]   # CLIP scorer for PG-IA-NILUT
 metrics = ["scikit-image>=0.20"]             # CIEDE2000, SSIM
 eval = ["scikit-image>=0.20", "imageio>=2.30"]
-all = ["numba>=0.57", "torch>=2.0", "open_clip_torch>=2.20", "scikit-image>=0.20", "imageio>=2.30"]
-dev = ["pytest>=7", "scipy>=1.9", "scikit-image>=0.20", "imageio>=2.30", "numba>=0.57"]
+lpips = ["torch>=2.0", "lpips>=0.1"]         # perceptual metric
+png = ["opencv-python-headless>=4"]           # Hald CLUT PNG read/write
+viz = ["matplotlib>=3.6"]                     # static 3D LUT volume plots
+predictor = ["torch>=2.0", "torchvision>=0.15"]   # ResNet-18 predictor (PPR10K)
+all = ["numba>=0.57", "torch>=2.0", "torchvision>=0.15", "open_clip_torch>=2.20",
+       "scikit-image>=0.20", "imageio>=2.30", "opencv-python-headless>=4", "lpips>=0.1",
+       "matplotlib>=3.6"]
+dev = ["pytest>=7", "scipy>=1.9", "scikit-image>=0.20", "imageio>=2.30", "numba>=0.57",
+       "matplotlib>=3.6"]
+test = ["pytest>=7", "scipy>=1.9", "scikit-image>=0.20", "imageio>=2.30", "numba>=0.57",
+        "torch>=2.0", "torchvision>=0.15", "opencv-python-headless>=4", "matplotlib>=3.6"]
+
+[tool.hatch.version]
+path = "lutlab/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["lutlab"]

@@ -52,7 +52,7 @@ fused
 
 .. _backend-fused:
 
-An opt-in, hand-written HIP kernel compiled into lutlab for the common case: a
+An opt-in, hand-written HIP/CUDA kernel compiled into lutlab for the common case: a
 **cubic, uniform** 3-D LUT on a GPU, with nearest, multilinear and
 tetrahedral interpolation. It is not selected by ``auto``;
 you must ask for it by name. It needs ``torch`` + a CUDA/ROCm device (and the

@@ -15,7 +15,7 @@ Description
 scheme) -> out`` -- registered in a small priority-ordered registry.
 :ref:`lutlab.kernels.apply <func-kernels-apply>` and :ref:`interpolate <func-kernels-interpolate>`
 select a backend and call it. Four backends ship with lutlab (``numpy``,
-``numba``, ``torch``, and the opt-in native ``fused`` HIP kernel); add your own
+``numba``, ``torch``, and the opt-in native ``fused`` HIP/CUDA kernel); add your own
 with :ref:`register <func-kernels-register>`.
 
 .. rst-class:: classref-introduction-group

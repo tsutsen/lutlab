@@ -82,6 +82,8 @@ Methods
      - :ref:`cost <class-LUTMixture-cost>`
    * - :ref:`LUT <class-LUT>`
      - :ref:`to_lut <class-LUTMixture-to_lut>`
+   * - :ref:`LUT <class-LUT>`
+     - :ref:`resample <class-LUTMixture-resample>`
 
 ----
 
@@ -167,7 +169,10 @@ Create a mixture from a non-empty sequence of LUT objects (all with the same
 
 Apply every LUT to ``x`` and blend the outputs with the weights from ``context=``
 (shape ``(n_luts,)`` or ``(..., n_luts)``), falling back to the bound
-:ref:`weights <class-LUTMixture-weights>`. See :ref:`Backends <doc-backends>`.
+:ref:`weights <class-LUTMixture-weights>`. Global weights on a shared grid are
+baked into one LUT first; per-pixel weights use a one-pass numpy/torch kernel,
+while the numba and fused paths keep the per-LUT loop. See
+:ref:`Backends <doc-backends>`.
 
 ----
 
@@ -189,4 +194,17 @@ The sum of the constituent LUTs' costs, with ``meta["n_luts"]`` set to
 **LUTMixture.to_lut** ``(grid_size: int | None = None, *, weights: ndarray | None = None, **_kw) -> LUT``
 
 Collapse the blend to one dense LUT on a uniform ``grid_size`` grid, using global
-``(n_luts,)`` weights (exact when the LUTs share a grid).
+``(n_luts,)`` weights (exact when the LUTs share a grid and an input ``domain``;
+different domains raise).
+
+----
+
+.. _class-LUTMixture-resample:
+
+.. rst-class:: classref-method
+
+**LUTMixture.resample** ``(grid_size: int | None = None, **kw) -> LUT``
+
+The same as :ref:`to_lut <class-LUTMixture-to_lut>` for a mixture with bound
+global weights. Per-pixel weights cannot be frozen into one LUT; pass global
+``weights=`` or bind them at construction.
